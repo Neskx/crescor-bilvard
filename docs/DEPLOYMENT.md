@@ -37,6 +37,12 @@ npx supabase db push          # applies supabase/migrations/*.sql
 
 `db push` does **not** apply `supabase/seed.sql` (demo data for local development only).
 
+After the first manual deploy, the `Deploy Supabase` workflow
+(`.github/workflows/deploy-supabase.yml`) applies new migrations and redeploys
+the Edge Functions automatically on every push to `main` that touches
+`supabase/`. It needs the repository secret `SUPABASE_ACCESS_TOKEN` and the
+repository variable `SUPABASE_PROJECT_REF`.
+
 After pushing, the database contains: the schema, Row Level Security, booking
 functions, the six suggested services (no prices, durations to be reviewed),
 all weekdays **closed**, and online booking **disabled**. Nothing is bookable
