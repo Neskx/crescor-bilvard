@@ -1,0 +1,30 @@
+# Image credits
+
+All photographs are from [Unsplash](https://unsplash.com) and were downloaded via
+the Unsplash CDN as desaturated, cropped WebP files. They are used under the
+[Unsplash License](https://unsplash.com/license), which permits free commercial
+use without attribution (attribution is appreciated).
+
+**Before launch:** open each link and confirm the photo is still marked “Free to
+use under the Unsplash License” (not *Unsplash+*). The licences of the hero and
+the three gallery images were confirmed on their photo pages on 2026-10-19; the
+others were listed as free on Unsplash's “auto detailing” search page.
+
+| File | Subject | Photographer | Source |
+|---|---|---|---|
+| `hero-desktop.webp`, `hero-mobile.webp`, `og-image.jpg` | Machine polishing under hexagon lights | Zac Nielson | https://unsplash.com/photos/RTK0x8nODqA |
+| `service-invandig.webp` | Black leather car interior | — | https://unsplash.com/photos/black-and-gray-car-interior-U4IaoKF5aj4 |
+| `service-utvandig.webp` | Black car covered in wash foam | — | https://unsplash.com/photos/black-car-covered-in-soap-suds-during-wash-bCQSrcYghJI |
+| `service-helrekond.webp` | Matte black coupé in a workshop | — | https://unsplash.com/photos/matte-black-sports-car-in-garage-a2I0FYazAdQ |
+| `service-polering.webp` | Detailer polishing a black car | — | https://unsplash.com/photos/a-man-waxing-a-car-in-a-garage-CsZjHjFN3N8 |
+| `service-kladsel.webp` | Dashboard cleaned with a brush | — | https://unsplash.com/photos/detailer-cleaning-the-dashboard-of-a-classic-car-5SmPnmCjwcU |
+| `service-special.webp` | Tyre cleaned with a brush | — | https://unsplash.com/photos/person-cleaning-car-tire-with-brush-8k_T1EwTySs |
+| `about.webp` | SUV covered in foam at a car wash | — | https://unsplash.com/photos/a-dark-suv-covered-in-soap-at-a-car-wash-SyvBZqordVQ |
+| `gallery-demo-1.webp` | BMW interior | Michael Lock | https://unsplash.com/photos/6MIfjkMuBEQ |
+| `gallery-demo-2.webp` | Headlight work | — | https://unsplash.com/photos/a-man-waxing-the-hood-of-a-car-dlJelFmdpOc |
+| `gallery-demo-3.webp` | Classic car paint and chrome | Chris Knight | https://unsplash.com/photos/ZmtWfHe0juU |
+
+The gallery images are **demonstration material** and are labelled as such on
+the site (`GALLERY_IS_DEMO` in `src/config/site.ts`). Replace them with the
+company's own before/after photos before turning the label off. Stock photos
+must never be presented as completed customer work.

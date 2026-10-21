@@ -1,0 +1,35 @@
+# Keeps the scheduled workflows alive.
+#
+# GitHub disables scheduled workflows in public repositories after 60 days
+# without repository activity. That would silently stop the health check that
+# keeps the Supabase Free project from pausing. This job re-enables the
+# scheduled workflows (including itself) through the API once a month, which
+# resets the inactivity timer without creating commits.
+#
+# No secrets required: uses the built-in GITHUB_TOKEN.
+
+name: Keepalive
+
+on:
+  schedule:
+    - cron: '41 5 1 * *'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Re-enable scheduled workflows
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          for wf in health-check.yml keepalive.yml; do
+            gh api -X PUT "repos/$GH_REPO/actions/workflows/$wf/enable"
+            echo "Enabled $wf"
+          done

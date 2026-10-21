@@ -1,0 +1,2 @@
+# SPA fallback (Cloudflare Pages / Netlify): every route is served by index.html
+/*    /index.html   200

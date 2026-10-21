@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Typecheck, lint, unit tests, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+        env:
+          VITE_SITE_URL: https://www.example.se
+
+  integration:
+    name: Database + end-to-end tests (local Supabase)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: Start local Supabase (migrations + seed)
+        run: |
+          printf "BOOKING_RATE_LIMIT_PER_HOUR=1000\nCONTACT_RATE_LIMIT_PER_HOUR=1000\n" > supabase/functions/.env
+          npx supabase start -x studio,imgproxy,vector,logflare,supavisor,mailpit
+
+      - name: Configure test environment
+        run: |
+          eval "$(npx supabase status -o env | grep -E '^(API_URL|PUBLISHABLE_KEY|SERVICE_ROLE_KEY)=')"
+          printf "VITE_SUPABASE_URL=%s\nVITE_SUPABASE_ANON_KEY=%s\n" "$API_URL" "$PUBLISHABLE_KEY" > .env.local
+          SUPABASE_URL="$API_URL" SUPABASE_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY" ADMIN_PASSWORD='CiAdminPassword2026' \
+            node scripts/create-admin.mjs admin@crescor.test
+
+      - run: npm run test:db
+
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+        env:
+          E2E_ADMIN_PASSWORD: CiAdminPassword2026
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-traces
+          path: test-results
+          retention-days: 3

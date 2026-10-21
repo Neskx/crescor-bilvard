@@ -1,0 +1,67 @@
+# Encrypted database backup (manual; optional schedule).
+#
+# Supabase Free has no automatic backups. This workflow dumps the database with
+# the Supabase CLI, ENCRYPTS it with a passphrase (AES-256, GPG symmetric) and
+# stores it as a short-lived workflow artifact.
+#
+# !!! Workflow artifacts can be downloaded by anyone with read access to the
+# !!! repository. The dump contains customer personal data: it is only ever
+# !!! uploaded encrypted. Prefer a PRIVATE repository for this project.
+#
+# Required secrets:
+#   SUPABASE_DB_URL      Session-pooler connection string (Project → Connect)
+#   BACKUP_PASSPHRASE    Long random passphrase. Store it in a password manager:
+#                        without it the backup cannot be restored.
+#
+# Restore: see docs/BACKUP.md.
+
+name: Database backup
+
+on:
+  workflow_dispatch:
+  # Uncomment to run weekly (Sunday 02:30 UTC):
+  # schedule:
+  #   - cron: '30 2 * * 0'
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: supabase
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Dump schema and data
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p backup
+          supabase db dump --db-url "$SUPABASE_DB_URL" -f backup/schema.sql
+          supabase db dump --db-url "$SUPABASE_DB_URL" --role-only -f backup/roles.sql
+          supabase db dump --db-url "$SUPABASE_DB_URL" --data-only --use-copy -f backup/data.sql
+
+      - name: Encrypt
+        env:
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          test -n "$BACKUP_PASSPHRASE" || { echo "BACKUP_PASSPHRASE is not set"; exit 1; }
+          tar -czf backup.tar.gz backup
+          gpg --batch --yes --symmetric --cipher-algo AES256 --passphrase-fd 0 -o "crescor-backup-$(date -u +%Y%m%dT%H%MZ).tar.gz.gpg" backup.tar.gz <<< "$BACKUP_PASSPHRASE"
+          shred -u backup.tar.gz backup/*.sql
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: crescor-backup-encrypted
+          path: crescor-backup-*.tar.gz.gpg
+          retention-days: 7
+          if-no-files-found: error

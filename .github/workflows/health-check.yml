@@ -1,0 +1,50 @@
+# Scheduled uptime check (primary safeguard).
+#
+# What it checks: the `health` Edge Function (which performs one tiny database
+# read) and, optionally, that the website itself responds.
+# How often: Monday and Thursday 06:17 UTC — never more than 4 days apart, well
+# inside Supabase Free's inactivity window, with very few requests.
+# Failures: the job fails and GitHub e-mails the repository owner.
+#
+# Required repository secrets:  HEALTH_URL, HEALTH_CHECK_TOKEN
+# Optional repository variable: SITE_URL
+#
+# NOTE: A health check does not guarantee that Supabase will never pause a Free
+# project; Supabase decides what counts as activity. GitHub also disables
+# scheduled workflows in public repositories after 60 days without repository
+# activity; keepalive.yml re-enables it monthly so that never happens.
+
+name: Health check
+
+on:
+  schedule:
+    - cron: '17 6 * * 1,4'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: health-check
+  cancel-in-progress: false
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts/health-check.mjs
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check backend and website
+        env:
+          HEALTH_URL: ${{ secrets.HEALTH_URL }}
+          HEALTH_CHECK_TOKEN: ${{ secrets.HEALTH_CHECK_TOKEN }}
+          SITE_URL: ${{ vars.SITE_URL }}
+        run: node scripts/health-check.mjs
