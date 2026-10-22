@@ -8,6 +8,7 @@ import { BookingPage } from './pages/BookingPage';
 import { AboutPage } from './pages/AboutPage';
 import { ContactPage } from './pages/ContactPage';
 import { PrivacyPage } from './pages/PrivacyPage';
+import { ReviewPage } from './pages/ReviewPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { Spinner } from './components/ui';
 
@@ -95,6 +96,7 @@ export default function App() {
                   <Route path="/om-oss" element={<AboutPage />} />
                   <Route path="/kontakt" element={<ContactPage />} />
                   <Route path="/integritetspolicy" element={<PrivacyPage />} />
+                  <Route path="/recension" element={<ReviewPage />} />
                   <Route path="*" element={<NotFoundPage />} />
                 </Routes>
               </PublicConfigProvider>

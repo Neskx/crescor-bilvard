@@ -6,8 +6,10 @@ import { Alert, Spinner } from '../../components/ui';
 import { Turnstile, turnstileEnabled, type TurnstileHandle } from '../../components/Turnstile';
 import { formatDateLong, formatDuration, formatTime } from '../../lib/datetime';
 import { formatAmount, formatTotal } from '../../lib/format';
-import type { Draft, StepId } from '../draft';
-import type { Addon, PublicSettings, Service } from '../../types';
+import { needsAddress, type Draft, type StepId } from '../draft';
+import { LOCATION_LABEL, locationFee } from '../locations';
+import { CHARITY_POLICY_TEXT } from './StepCharity';
+import type { Addon, Charity, PublicSettings, Service } from '../../types';
 
 function Row({ label, children, onEdit }: { label: string; children: ReactNode; onEdit?: () => void }) {
   return (
@@ -33,6 +35,8 @@ export function StepSummary({
   service,
   addons,
   settings,
+  charity,
+  charityStep,
   submitting,
   error,
   onPrivacy,
@@ -47,6 +51,9 @@ export function StepSummary({
   service: Service;
   addons: Addon[];
   settings: PublicSettings;
+  /** Chosen cause, or null when none was chosen / the programme is off. */
+  charity: Charity | null;
+  charityStep: boolean;
   submitting: boolean;
   error: string | null;
   onPrivacy: (v: boolean) => void;
@@ -60,7 +67,8 @@ export function StepSummary({
   const tz = settings.timezone;
   const d = draft.details;
   const addonsTotal = addons.reduce((sum, a) => sum + a.price, 0);
-  const price = formatTotal(service.price, service.price_type, addonsTotal);
+  const fee = locationFee(settings, draft.locationType);
+  const price = formatTotal(service.price, service.price_type, addonsTotal + (fee ?? 0));
   const privacyRef = useRef<HTMLInputElement>(null);
   const location =
     draft.locationType === 'workshop'
@@ -80,12 +88,16 @@ export function StepSummary({
         {draft.slot && (
           <Row label="Datum och tid" onEdit={() => onEdit('time')}>
             {formatDateLong(draft.slot.start, tz)}, {formatTime(draft.slot.start, tz)}–{formatTime(draft.slot.end, tz)}
-            <span className="block text-sm text-silver-400">Beräknad tid: ca {formatDuration(service.duration_minutes)}</span>
+            <span className="block text-sm text-silver-400">Beräknad tid: ca {service.duration_text || formatDuration(service.duration_minutes)}</span>
           </Row>
         )}
         <Row label="Plats" onEdit={() => onEdit('location')}>
+          {draft.locationType && <span className="block font-semibold">{LOCATION_LABEL[draft.locationType]}</span>}
           {location}
-          {draft.locationType === 'customer_address' && draft.address.address_instructions && (
+          {draft.locationType === 'pickup' && (
+            <span className="block text-sm text-silver-400">Vi kontaktar dig för att bekräfta tider för hämtning och återlämning.</span>
+          )}
+          {needsAddress(draft.locationType) && draft.address.address_instructions && (
             <span className="block text-sm whitespace-pre-line text-silver-400">{draft.address.address_instructions}</span>
           )}
         </Row>
@@ -99,6 +111,11 @@ export function StepSummary({
                 </li>
               ))}
             </ul>
+          </Row>
+        )}
+        {fee !== null && fee > 0 && (
+          <Row label={draft.locationType === 'pickup' ? 'Hämtning' : 'Framkörning'} onEdit={() => onEdit('location')}>
+            +{formatAmount(fee)}
           </Row>
         )}
         <Row label="Pris">{price ?? 'Pris enligt offert – vi ger dig ett besked utifrån bilens skick.'}</Row>
@@ -116,6 +133,12 @@ export function StepSummary({
         {d.customer_notes && (
           <Row label="Övrigt" onEdit={() => onEdit('details')}>
             <span className="whitespace-pre-line">{d.customer_notes}</span>
+          </Row>
+        )}
+        {charityStep && (
+          <Row label="Ändamål" onEdit={() => onEdit('charity')}>
+            {charity ? charity.name : 'Inget särskilt val'}
+            {charity && <span className="mt-1 block text-sm text-silver-400">{CHARITY_POLICY_TEXT}</span>}
           </Row>
         )}
       </dl>

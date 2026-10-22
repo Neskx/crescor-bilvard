@@ -42,6 +42,7 @@ export function BookingSuccess({ result, settings, onNew }: { result: SuccessInf
         {confirmed
           ? 'Vi ser fram emot att ta hand om din bil.'
           : 'Vi har tagit emot din bokningsförfrågan och reserverat tiden. Vi bekräftar bokningen så snart vi har gått igenom den.'}
+        {result.location_type === 'pickup' && ' Vi kontaktar dig för att bekräfta tider för hämtning och återlämning av bilen.'}
       </p>
 
       <div className="mx-auto mt-10 max-w-md border border-white/[0.09] bg-ink-900 p-6 text-left">
@@ -76,6 +77,18 @@ export function BookingSuccess({ result, settings, onNew }: { result: SuccessInf
             <dt className="text-silver-400">Plats</dt>
             <dd className="text-right text-white">{result.location}</dd>
           </div>
+          {result.location_fee !== null && result.location_fee !== undefined && result.location_fee > 0 && (
+            <div className="flex justify-between gap-4">
+              <dt className="text-silver-400">{result.location_type === 'pickup' ? 'Hämtning' : 'Framkörning'}</dt>
+              <dd className="text-right text-white">+{formatAmount(result.location_fee)}</dd>
+            </div>
+          )}
+          {result.charity_name && (
+            <div className="flex justify-between gap-4">
+              <dt className="text-silver-400">Valt ändamål</dt>
+              <dd className="text-right text-white">{result.charity_name}</dd>
+            </div>
+          )}
         </dl>
       </div>
 

@@ -14,9 +14,9 @@ test('mobile: menu works and a booking can be completed with touch-sized control
   await page.locator('#mobile-menu').getByRole('link', { name: /Boka tid/ }).click();
   const booking = page.locator('#boka');
 
-  await booking.getByRole('radio', { name: /^Biltvätt/ }).click();
+  await booking.getByRole('radio', { name: /^Enkel Tvätt/ }).click();
   await booking.getByRole('button', { name: 'Fortsätt' }).click();
-  await booking.getByRole('radio', { name: /^Hos / }).click();
+  await booking.getByRole('radio', { name: /^Lämna bilen/ }).click();
   await booking.getByRole('button', { name: 'Fortsätt' }).click();
 
   await booking.getByRole('button', { name: 'Nästa vecka' }).click();
@@ -40,6 +40,8 @@ test('mobile: menu works and a booking can be completed with touch-sized control
   await booking.getByLabel('Namn', { exact: true }).fill('Mobil Kund');
   await booking.getByLabel('E-post').fill(uniqueEmail('mobile'));
   await booking.getByLabel('Telefon').fill('+46 70 123 45 67');
+  await booking.getByRole('button', { name: 'Fortsätt' }).click();
+  await booking.getByRole('radio', { name: /^Inget särskilt val/ }).click();
   await booking.getByRole('button', { name: 'Fortsätt' }).click();
   await booking.getByRole('checkbox').check();
   await booking.getByRole('button', { name: /Bekräfta bokning/ }).click();

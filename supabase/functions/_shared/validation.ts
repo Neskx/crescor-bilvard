@@ -20,13 +20,15 @@ export const LIMITS = {
   contactMessage: 3000,
 } as const;
 
-export type LocationType = 'workshop' | 'customer_address';
+export type LocationType = 'workshop' | 'pickup' | 'customer_address';
 
 export interface BookingInput {
   idempotency_key: string;
   service_id: string;
   /** Optional add-on (tillägg) ids. Prices are always taken from the database. */
   addon_ids?: string[];
+  /** Optional preferred cause (charity id). Never an amount. */
+  charity_id?: string;
   start_time: string;
   location_type: LocationType;
   customer_name: string;
@@ -121,7 +123,7 @@ export function validateCustomerDetails(input: Partial<BookingInput>): FieldErro
   return errors;
 }
 
-/** Validates the customer address (only used for mobile appointments). */
+/** Validates the customer address (pickup and on-site appointments). */
 export function validateAddress(input: Partial<BookingInput>): FieldErrors {
   const errors: FieldErrors = {};
   const address = clean(input.service_address);
@@ -161,13 +163,19 @@ export function validateBookingInput(raw: unknown): { ok: true; value: BookingIn
   const start = typeof r.start_time === 'string' ? Date.parse(r.start_time) : NaN;
   if (Number.isNaN(start)) errors.start_time = 'Välj en tid.';
   const location = r.location_type;
-  if (location !== 'workshop' && location !== 'customer_address') errors.location_type = 'Välj plats.';
+  if (location !== 'workshop' && location !== 'pickup' && location !== 'customer_address') errors.location_type = 'Välj plats.';
+  let charityId: string | undefined;
+  if (r.charity_id !== undefined && r.charity_id !== null && r.charity_id !== '') {
+    if (isUuid(r.charity_id)) charityId = r.charity_id.toLowerCase();
+    else errors.charity_id = 'Ogiltigt ändamål.';
+  }
   if (r.privacy_accepted !== true) errors.privacy_accepted = 'Du behöver godkänna integritetsinformationen.';
 
   const value: BookingInput = {
     idempotency_key: String(r.idempotency_key ?? ''),
     service_id: String(r.service_id ?? ''),
     addon_ids: addonIds,
+    charity_id: charityId,
     start_time: typeof r.start_time === 'string' ? new Date(start || 0).toISOString() : '',
     location_type: location as LocationType,
     customer_name: clean(r.customer_name),
@@ -179,7 +187,7 @@ export function validateBookingInput(raw: unknown): { ok: true; value: BookingIn
     privacy_accepted: r.privacy_accepted === true,
   };
 
-  if (location === 'customer_address') {
+  if (location === 'customer_address' || location === 'pickup') {
     value.service_address = clean(r.service_address);
     value.service_postal_code = clean(r.service_postal_code);
     value.service_city = clean(r.service_city);

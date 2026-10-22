@@ -25,4 +25,15 @@ where weekday between 1 and 5;
 update public.business_hours set is_closed = false, opening_time = '10:00', closing_time = '15:00'
 where weekday = 6;
 
--- The main service stays a placeholder priced on request; add-ons keep their real prices.
+-- Phase 2 location options (local demo only). Fees stay unset: nothing is charged
+-- unless the business configures it. On-site washing is enabled for one package
+-- so the per-package rule can be tried locally.
+update public.business_settings set
+  pickup_service_enabled = true,
+  pickup_area_text = '[DEMO] Exempelstad med omnejd',
+  workshop_instructions = '[DEMO] Parkera på markerad plats och lämna nyckeln i receptionen.'
+where id = 1;
+
+update public.services set allow_mobile = true where slug = 'enkel-tvatt';
+
+-- Package prices come from the migrations; add-ons keep their real prices.

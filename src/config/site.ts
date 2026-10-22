@@ -23,27 +23,77 @@ export const SERVICE_IMAGES: Record<string, { src: string; alt: string }> = {
   default: { src: '/images/service-helrekond.webp', alt: 'Välvårdad bil' },
 };
 
+/**
+ * Partner logos supplied by the business, bundled in /public/partners.
+ * `verified` = the name ↔ logo match is certain. Unverified logos are only
+ * offered in /admin for the business to confirm; they are never auto-assigned.
+ */
+export const PARTNER_LOGOS: { path: string; label: string; background: 'light' | 'dark'; verified: boolean }[] = [
+  { path: '/partners/greentopia.webp', label: 'Greentopia', background: 'light', verified: true },
+  { path: '/partners/boxpark.webp', label: 'BoxPark', background: 'dark', verified: true },
+  { path: '/partners/korpera.webp', label: 'Korpera', background: 'dark', verified: true },
+  { path: '/partners/reklamx.webp', label: 'REKLAMX', background: 'light', verified: true },
+  { path: '/partners/jk.webp', label: 'JK (grön) – ägare ej bekräftad', background: 'light', verified: false },
+  { path: '/partners/metallotech.webp', label: 'Metallotech', background: 'light', verified: true },
+];
+
 export function serviceImage(key: string | null | undefined) {
   return SERVICE_IMAGES[key ?? ''] ?? SERVICE_IMAGES.default;
 }
 
 /**
  * Shown only if the database cannot be reached, so the marketing site still
- * renders. Mirrors supabase/migrations/*_single_service_and_addons.sql. Never bookable.
+ * renders. Mirrors supabase/migrations/*_phase2_packages_locations.sql. Never bookable.
  */
 export const FALLBACK_SERVICES: Service[] = [
   {
-    id: 'fallback-biltvatt',
-    slug: 'biltvatt',
-    name: 'Biltvätt',
-    description:
-      'Platshållare – beskrivningen av tjänsten uppdateras inom kort. Välj gärna tillägg för att anpassa behandlingen efter din bil.',
-    duration_minutes: 0,
-    price: null,
-    price_type: 'on_request',
+    id: 'fallback-enkel-tvatt',
+    slug: 'enkel-tvatt',
+    name: 'Enkel Tvätt',
+    description: 'En smidig och noggrann tvätt för dig som vill fräscha upp bilen och ge den ett välvårdat intryck.',
+    duration_minutes: 120,
+    duration_text: '1,5–2 timmar',
+    price: 650,
+    price_type: 'fixed',
     image_key: 'utvandig',
+    tagline: 'Bas',
+    features: ['Smidig och noggrann tvätt', 'Fräschar upp bilens intryck', 'Exakt innehåll bekräftas vid bokningen'],
+    is_highlighted: false,
+  },
+  {
+    id: 'fallback-mini-rekond',
+    slug: 'mini-rekond',
+    name: 'Mini Rekond',
+    description:
+      'En mer omfattande bilvård med extra fokus på detaljerna. Vi rengör fälgar, dammsuger kupén och arbetar noggrant med bilens invändiga ytor.',
+    duration_minutes: 210,
+    duration_text: '3–3,5 timmar',
+    price: 1200,
+    price_type: 'fixed',
+    image_key: 'invandig',
+    tagline: 'Mer detaljer',
+    features: ['Handrengöring av fälgar', 'Dammsugning av kupén', 'Detaljrengöring med pensel', 'Noggrannare rengöring av invändiga ytor'],
+    is_highlighted: false,
+  },
+  {
+    id: 'fallback-premium-rekond',
+    slug: 'premium-rekond',
+    name: 'Premium Rekond',
+    description:
+      'För dig som vill ge bilen extra omsorg. En grundlig rekond med textilrengöring, noggrant detaljarbete och fokus på ett så välvårdat resultat som möjligt.',
+    duration_minutes: 300,
+    duration_text: '4,5–5 timmar',
+    price: 1800,
+    price_type: 'fixed',
+    image_key: 'helrekond',
+    tagline: 'Mest omfattande',
+    features: ['Allt som ingår i Mini Rekond', 'Textilrengöring av klädsel', 'Grundligare detaljarbete', 'Extra fokus på finish och renhet', 'Omfattande invändig behandling'],
+    is_highlighted: true,
   },
 ];
+
+/** Old service URLs that now belong to a renamed service. */
+export const LEGACY_SERVICE_SLUGS: Record<string, string> = { biltvatt: 'enkel-tvatt' };
 
 export const FALLBACK_ADDONS: Addon[] = (
   [

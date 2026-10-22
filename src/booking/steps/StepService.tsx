@@ -76,7 +76,7 @@ export function StepService({
       >
         {single ? 'Din tjänst' : 'Vilken tjänst vill du boka?'}
       </StepTitle>
-      <div role="radiogroup" aria-label="Tjänster" className={cx('grid gap-3', !single && 'md:grid-cols-2')}>
+      <div role="radiogroup" aria-label="Tjänster" className={cx('grid gap-3', !single && (services.length === 3 ? 'lg:grid-cols-3' : 'md:grid-cols-2'))}>
         {services.map((s) => {
           const price = formatPrice(s.price, s.price_type);
           return (
@@ -89,7 +89,7 @@ export function StepService({
                 <>
                   <span className="inline-flex items-center gap-1.5">
                     <Clock className="h-3.5 w-3.5 text-silver-500" aria-hidden />
-                    ca {formatDuration(s.duration_minutes)}
+                    ca {s.duration_text || formatDuration(s.duration_minutes)}
                   </span>
                   <span className="font-semibold text-white">{price ?? 'Pris enligt offert'}</span>
                 </>

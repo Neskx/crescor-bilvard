@@ -1,24 +1,30 @@
 import { expect, test } from '@playwright/test';
-import { adminLogin, chooseService, chooseWorkshop, fillDetails, firstFreeSlot, uniqueEmail } from './helpers';
+import { adminLogin, chooseCharity, chooseService, chooseWorkshop, fillDetails, firstFreeSlot, uniqueEmail } from './helpers';
 
 test.describe('Customer booking journey', () => {
-  test('books a mobile appointment end to end and gets a booking reference', async ({ page }) => {
+  test('books a pickup appointment end to end, with add-ons and a chosen cause', async ({ page }) => {
     await page.goto('/');
     await page.getByRole('link', { name: /Boka bilvård/ }).first().click();
     const booking = page.locator('#boka');
 
-    // Add-ons are optional and add up
-    await expect(booking.getByRole('radio', { name: /^Biltvätt/ })).toHaveAttribute('aria-checked', 'true');
+    // Three packages with prices and duration ranges; add-ons are optional and add up
+    await expect(booking.getByRole('radio', { name: /^Enkel Tvätt/ })).toContainText('650 kr');
+    await expect(booking.getByRole('radio', { name: /^Mini Rekond/ })).toContainText('3–3,5 timmar');
+    await expect(booking.getByRole('radio', { name: /^Premium Rekond/ })).toContainText(/1\s800 kr/);
+    await booking.getByRole('radio', { name: /^Mini Rekond/ }).click();
     await booking.getByRole('checkbox', { name: /Keramiskt sprayvax/ }).click();
     await booking.getByRole('checkbox', { name: /Fläckborttagning/ }).click();
     await expect(booking.getByText('150 kr', { exact: true })).toBeVisible();
-    await chooseService(page, 'Biltvätt');
+    await chooseService(page, 'Mini Rekond');
 
-    // Mobile location requires a valid address
-    await booking.getByRole('radio', { name: /^På din adress/ }).click();
+    // Three location cards; on-site washing is not offered for this package
+    await expect(booking.getByRole('radio', { name: /^Tvätt på plats/ })).toBeDisabled();
+    // Pickup requires a valid address
+    await booking.getByRole('radio', { name: /^Vi hämtar bilen/ }).click();
+    await expect(booking.getByText(/bekräfta när bilen hämtas/)).toBeVisible();
     await booking.getByRole('button', { name: 'Fortsätt' }).click();
     await expect(booking.getByText('Ange gatuadress.')).toBeVisible();
-    await page.getByLabel('Gatuadress').fill('Testvägen 5');
+    await page.getByLabel('Hämtadress').fill('Testvägen 5');
     await page.getByLabel('Postnummer').fill('2111');
     await page.getByLabel('Ort').fill('Malmö');
     await booking.getByRole('button', { name: 'Fortsätt' }).click();
@@ -37,10 +43,16 @@ test.describe('Customer booking journey', () => {
     await fillDetails(page, uniqueEmail('journey'));
     await booking.getByRole('button', { name: 'Fortsätt' }).click();
 
+    // Choosing a cause is free and explained as a preference, not an amount
+    await expect(booking.getByText(/ingen fast procentsats/)).toBeVisible();
+    await chooseCharity(page, 'Svenska Röda Korset');
+
     await expect(booking.getByRole('heading', { name: 'Sammanfattning' })).toBeVisible();
+    await expect(booking.getByText('Vi hämtar bilen', { exact: true })).toBeVisible();
     await expect(booking.getByText('Testvägen 5, 211 15 Malmö')).toBeVisible();
     await expect(booking.getByText('Keramiskt sprayvax')).toBeVisible();
-    await expect(booking.getByText(/Tjänsten enligt offert \+ tillägg 150 kr/)).toBeVisible();
+    await expect(booking.getByText(/^1\s350 kr$/)).toBeVisible();
+    await expect(booking.getByText('Svenska Röda Korset')).toBeVisible();
 
     // Privacy acceptance required
     await booking.getByRole('button', { name: /Bekräfta bokning/ }).click();
@@ -50,13 +62,14 @@ test.describe('Customer booking journey', () => {
 
     await expect(booking.getByRole('heading', { name: /reserverad|bekräftad/ })).toBeVisible({ timeout: 20_000 });
     await expect(booking.getByText(/^CB-[A-Z0-9]{6}$/)).toBeVisible();
+    await expect(booking.getByText('Svenska Röda Korset')).toBeVisible();
     // Email is not configured locally: the UI must not claim one was sent
     await expect(booking.getByText(/har skickats till/)).toHaveCount(0);
   });
 
   test('keeps entered information after a page refresh', async ({ page }) => {
     await page.goto('/#boka');
-    await chooseService(page, 'Biltvätt');
+    await chooseService(page, 'Enkel Tvätt');
     await chooseWorkshop(page);
     await (await firstFreeSlot(page, 1)).click();
     await page.locator('#boka').getByRole('button', { name: 'Fortsätt' }).click();
@@ -76,12 +89,13 @@ test.describe('Customer booking journey', () => {
       [b, 'raceB'],
     ] as const) {
       await p.goto('/#boka');
-      await chooseService(p, 'Biltvätt');
+      await chooseService(p, 'Enkel Tvätt');
       await chooseWorkshop(p);
       await (await firstFreeSlot(p, 2)).click();
       await p.locator('#boka').getByRole('button', { name: 'Fortsätt' }).click();
       await fillDetails(p, uniqueEmail(tag));
       await p.locator('#boka').getByRole('button', { name: 'Fortsätt' }).click();
+      await chooseCharity(p);
       await p.locator('#boka').getByRole('checkbox').check();
     }
     const timeA = await a.locator('#boka dd').nth(1).innerText();
@@ -112,7 +126,7 @@ test.describe('Customer booking journey', () => {
 
   test('a slot that is booked shows as unavailable to others', async ({ page }) => {
     await page.goto('/#boka');
-    await chooseService(page, 'Biltvätt');
+    await chooseService(page, 'Enkel Tvätt');
     await chooseWorkshop(page);
     await page.locator('#boka').getByRole('button', { name: 'Nästa vecka' }).click();
     await page.locator('#boka').getByRole('button', { name: 'Nästa vecka' }).click();
@@ -135,17 +149,19 @@ test.describe('Administration', () => {
     // Create a booking as a customer first
     const email = uniqueEmail('admin');
     await page.goto('/#boka');
-    await chooseService(page, 'Biltvätt');
+    await chooseService(page, 'Enkel Tvätt');
     await chooseWorkshop(page);
     await (await firstFreeSlot(page, 3)).click();
     await page.locator('#boka').getByRole('button', { name: 'Fortsätt' }).click();
     await fillDetails(page, email);
     await page.locator('#boka').getByRole('button', { name: 'Fortsätt' }).click();
+    await chooseCharity(page);
     await page.locator('#boka').getByRole('checkbox').check();
     await page.locator('#boka').getByRole('button', { name: /Bekräfta bokning/ }).click();
     const ref = (await page.locator('#boka').getByText(/^CB-[A-Z0-9]{6}$/).innerText()).trim();
 
     await adminLogin(page);
+    await page.getByRole('navigation', { name: 'Administration' }).getByRole('link', { name: 'Bokningar' }).click();
     await page.getByPlaceholder(/Sök bokningsnr/).fill(ref);
     await page.getByRole('button', { name: new RegExp(ref) }).click();
     const drawer = page.getByRole('dialog', { name: 'Bokningsdetaljer' });

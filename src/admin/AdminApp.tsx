@@ -1,7 +1,23 @@
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import type { Session } from '@supabase/supabase-js';
-import { CalendarDays, CalendarOff, Clock, ExternalLink, Inbox, ListChecks, LogOut, PlusCircle, Settings, Sparkles } from 'lucide-react';
+import {
+  CalendarDays,
+  CalendarOff,
+  Clock,
+  ExternalLink,
+  Handshake,
+  HeartHandshake,
+  Inbox,
+  LayoutDashboard,
+  ListChecks,
+  LogOut,
+  MapPin,
+  MessageSquareQuote,
+  PlusCircle,
+  Settings,
+  Sparkles,
+} from 'lucide-react';
 import { supabase, supabaseConfigured } from '../lib/supabase';
 import { Logo } from '../components/logo/Logo';
 import { Alert, Field, Spinner, fieldAria } from '../components/ui';
@@ -15,6 +31,11 @@ import { HoursView } from './views/Hours';
 import { BlockedView } from './views/Blocked';
 import { SettingsView } from './views/Settings';
 import { MessagesView } from './views/Messages';
+import { OverviewView } from './views/Overview';
+import { LocationsView } from './views/Locations';
+import { ReviewsView } from './views/Reviews';
+import { PartnersView } from './views/Partners';
+import { CharityView } from './views/Charity';
 import { cx } from '../lib/format';
 
 function useNoIndex() {
@@ -139,11 +160,16 @@ function NewPasswordForm({ onDone }: { onDone: () => void }) {
 }
 
 const NAV = [
+  { to: 'oversikt', label: 'Översikt', icon: LayoutDashboard },
   { to: 'bokningar', label: 'Bokningar', icon: ListChecks },
   { to: 'kalender', label: 'Kalender', icon: CalendarDays },
   { to: 'ny-bokning', label: 'Ny bokning', icon: PlusCircle },
   { to: 'meddelanden', label: 'Meddelanden', icon: Inbox },
-  { to: 'tjanster', label: 'Tjänster', icon: Sparkles },
+  { to: 'tjanster', label: 'Tjänster & priser', icon: Sparkles },
+  { to: 'platser', label: 'Platser & hämtning', icon: MapPin },
+  { to: 'recensioner', label: 'Recensioner', icon: MessageSquareQuote },
+  { to: 'partners', label: 'Samarbetspartners', icon: Handshake },
+  { to: 'valgorenhet', label: 'Välgörenhet', icon: HeartHandshake },
   { to: 'oppettider', label: 'Öppettider', icon: Clock },
   { to: 'blockerat', label: 'Blockerade tider', icon: CalendarOff },
   { to: 'installningar', label: 'Inställningar', icon: Settings },
@@ -167,11 +193,12 @@ function Dashboard({ session }: { session: Session }) {
           <Logo className="h-10 w-auto lg:h-auto lg:w-full lg:max-w-[190px]" />
           <p className="eyebrow hidden lg:mt-3 lg:block">Administration</p>
         </div>
-        <nav aria-label="Administration" className="no-scrollbar flex gap-1 overflow-x-auto px-3 pb-3 lg:flex-col lg:px-3 lg:pb-0">
+        <nav aria-label="Administration" className="no-scrollbar flex gap-1 overflow-x-auto px-3 pb-3 lg:max-h-[calc(100vh-290px)] lg:flex-col lg:overflow-y-auto lg:px-3 lg:pb-0">
           {NAV.map(({ to, label, icon: Icon }) => (
             <NavLink
               key={to}
-              to={to}
+              // Absolute: inside the /admin/* splat route, relative links would resolve against the current URL.
+              to={`/admin/${to}`}
               className={({ isActive }) =>
                 cx(
                   'flex shrink-0 items-center gap-3 px-3 py-2.5 text-sm whitespace-nowrap transition-colors',
@@ -206,7 +233,12 @@ function Dashboard({ session }: { session: Session }) {
 
       <main className="min-w-0 px-4 py-8 sm:px-8 lg:px-12 lg:py-12">
         <Routes>
-          <Route index element={<Navigate to="bokningar" replace />} />
+          <Route index element={<Navigate to="/admin/oversikt" replace />} />
+          <Route path="oversikt" element={<OverviewView />} />
+          <Route path="platser" element={<LocationsView />} />
+          <Route path="recensioner" element={<ReviewsView />} />
+          <Route path="partners" element={<PartnersView />} />
+          <Route path="valgorenhet" element={<CharityView />} />
           <Route path="bokningar" element={<BookingsView onChanged={refreshPending} />} />
           <Route path="kalender" element={<CalendarView onChanged={refreshPending} />} />
           <Route path="ny-bokning" element={<NewBookingView onChanged={refreshPending} />} />
@@ -215,7 +247,7 @@ function Dashboard({ session }: { session: Session }) {
           <Route path="oppettider" element={<HoursView />} />
           <Route path="blockerat" element={<BlockedView />} />
           <Route path="installningar" element={<SettingsView />} />
-          <Route path="*" element={<Navigate to="bokningar" replace />} />
+          <Route path="*" element={<Navigate to="/admin/oversikt" replace />} />
         </Routes>
         <div className="mt-16 flex justify-end gap-2 lg:hidden">
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => void supabase?.auth.signOut()}>

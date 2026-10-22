@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import { adminMessage, applyRetention, getSettings, saveSettings } from '../adminApi';
 import { PageHeader, Toggle, useConfirm, useToast } from '../components';
 import { Alert, Field, Spinner } from '../../components/ui';
@@ -13,7 +14,6 @@ const TEXT_FIELDS: { key: keyof Form; label: string; hint?: string; textarea?: b
   { key: 'company_email', label: 'E-post', hint: 'Visas på webbplatsen och används som svarsadress.', max: 254 },
   { key: 'company_address', label: 'Adress till verkstaden', hint: 'Lämna tomt om ni inte tar emot bilar på en egen adress.', max: 300 },
   { key: 'opening_hours_text', label: 'Öppettider (text)', hint: 'Till exempel "Mån–fre 08–17". Visas på webbplatsen.', textarea: true, max: 300 },
-  { key: 'service_area_text', label: 'Område för mobil bilvård', hint: 'Till exempel "Malmö med omnejd".', max: 300 },
   { key: 'org_number', label: 'Organisationsnummer', max: 20 },
   { key: 'notification_email', label: 'E-post för bokningsnotiser', hint: 'Hit skickas nya bokningar. Tomt = företagets e-post.', max: 254 },
 ];
@@ -37,22 +37,28 @@ export function SettingsView() {
     if (!f) return;
     setFormError(null);
     const clean = (v: string | null) => (v && v.trim() ? v.trim() : null);
+    // Only this page's own fields: locations and the charity programme are saved on their own pages.
     const payload: Partial<Form> = {
-      ...f,
+      booking_enabled: f.booking_enabled,
+      auto_confirm: f.auto_confirm,
+      booking_notice_hours: f.booking_notice_hours,
+      booking_horizon_days: f.booking_horizon_days,
+      slot_interval_minutes: f.slot_interval_minutes,
+      retention_days: f.retention_days,
+      timezone: f.timezone,
       company_name: f.company_name.trim() || 'Crescor Bilvård',
       company_phone: clean(f.company_phone),
       company_email: clean(f.company_email),
       company_address: clean(f.company_address),
       opening_hours_text: clean(f.opening_hours_text),
-      service_area_text: clean(f.service_area_text),
       org_number: clean(f.org_number),
       notification_email: clean(f.notification_email),
     };
     for (const k of ['company_email', 'notification_email'] as const) {
       if (payload[k] && validateEmail(payload[k]!)) return setFormError('Kontrollera e-postadresserna.');
     }
-    if (payload.workshop_service_enabled && !payload.company_address) {
-      return setFormError('Ange verkstadens adress för att kunna erbjuda bokning hos er.');
+    if (f.workshop_service_enabled && !payload.company_address) {
+      return setFormError('"Lämna bilen" är aktiverat och kräver verkstadens adress. Ange adressen eller stäng av alternativet under Platser & hämtning.');
     }
     setBusy(true);
     try {
@@ -87,7 +93,7 @@ export function SettingsView() {
   const missing = [
     !f.company_phone && 'telefonnummer',
     !f.company_email && 'e-postadress',
-    !f.workshop_service_enabled && !f.mobile_service_enabled && 'minst ett platsalternativ (verkstad eller mobil)',
+    !f.workshop_service_enabled && !f.pickup_service_enabled && !f.mobile_service_enabled && 'minst ett platsalternativ (under Platser & hämtning)',
     !f.booking_enabled && 'aktivera onlinebokning',
   ].filter(Boolean);
 
@@ -117,13 +123,13 @@ export function SettingsView() {
         <section>
           <h2 className="eyebrow mb-4">Onlinebokning</h2>
           <Toggle checked={f.booking_enabled} onChange={(v) => setF({ ...f, booking_enabled: v })} label="Onlinebokning aktiverad" description="När den är avstängd visas ”Onlinebokningen öppnar snart” på webbplatsen." />
-          <Toggle
-            checked={f.workshop_service_enabled}
-            onChange={(v) => setF({ ...f, workshop_service_enabled: v })}
-            label="Bokning hos oss (verkstad)"
-            description="Kräver att verkstadens adress är ifylld."
-          />
-          <Toggle checked={f.mobile_service_enabled} onChange={(v) => setF({ ...f, mobile_service_enabled: v })} label="Mobil bilvård på kundens adress" />
+          <p className="border-b border-white/[0.06] py-4 text-sm text-silver-400">
+            Lämna bilen, hämtning och tvätt på plats ställs in under{' '}
+            <Link to="/admin/platser" className="text-white underline">
+              Platser & hämtning
+            </Link>
+            .
+          </p>
           <Toggle
             checked={f.auto_confirm}
             onChange={(v) => setF({ ...f, auto_confirm: v })}

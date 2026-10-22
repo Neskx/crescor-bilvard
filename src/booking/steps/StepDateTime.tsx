@@ -20,10 +20,11 @@ import {
 } from '../../lib/datetime';
 import { errorMessage } from '../../lib/messages';
 import { cx } from '../../lib/format';
-import type { BusinessHour, PublicSettings, Service, Slot } from '../../types';
+import type { BusinessHour, LocationType, PublicSettings, Service, Slot } from '../../types';
 
 interface Props {
   service: Service;
+  location: LocationType | null;
   settings: PublicSettings;
   businessHours: BusinessHour[];
   weekStart: string | null;
@@ -35,14 +36,14 @@ interface Props {
   titleRef: RefObject<HTMLHeadingElement | null>;
 }
 
-export function StepDateTime({ service, settings, businessHours, weekStart, slot, onWeek, onSlot, onBack, onNext, titleRef }: Props) {
+export function StepDateTime({ service, location, settings, businessHours, weekStart, slot, onWeek, onSlot, onBack, onNext, titleRef }: Props) {
   const tz = settings.timezone;
   const today = todayKey(tz);
   const firstWeek = startOfIsoWeek(today);
   const lastWeek = startOfIsoWeek(addDays(today, settings.booking_horizon_days));
   const week = weekStart && weekStart >= firstWeek && weekStart <= lastWeek ? weekStart : firstWeek;
 
-  const { status, slots, error, refresh } = useSlots(service.id, week);
+  const { status, slots, error, refresh } = useSlots(service.id, week, location);
   const [notice, setNotice] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
   const days = useMemo(() => weekDays(week), [week]);
@@ -98,7 +99,7 @@ export function StepDateTime({ service, settings, businessHours, weekStart, slot
     setNotice(null);
     try {
       for (let w = addDays(week, 7); w <= lastWeek; w = addDays(w, 7)) {
-        const ws = await loadWeek(service.id, w);
+        const ws = await loadWeek(service.id, w, location);
         const first = ws.find((s) => s.available);
         if (first) {
           setMobileDay(dateKeyInZone(first.start, tz));
@@ -129,7 +130,9 @@ export function StepDateTime({ service, settings, businessHours, weekStart, slot
         ref={titleRef}
         sub={
           <>
-            {service.name} tar cirka {formatDuration(service.duration_minutes)}. Alla tider anges i svensk tid.
+            {service.name} tar cirka {service.duration_text || formatDuration(service.duration_minutes)}.
+            {location === 'pickup' || location === 'customer_address' ? ' Visade tider är när arbetet startar – restid är redan inräknad.' : ''} Alla
+            tider anges i svensk tid.
           </>
         }
       >

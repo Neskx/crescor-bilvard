@@ -19,7 +19,7 @@ const q = (text: string, params: unknown[] = []) => pool.query(text, params);
 const MONDAY = addDays(startOfIsoWeek(todayKey()), 42);
 const at = (dayOffset: number, time: string) => zonedTimeToUtc(addDays(MONDAY, dayOffset), time);
 
-let serviceId: string; // Placeholder main service, set to 180 min + 30 min buffer for the tests
+let serviceId: string; // Enkel Tvätt (formerly the placeholder main service), set to 180 min + 30 min buffer for the tests
 let originalSettings: Record<string, unknown>;
 
 const booking = (over: Record<string, unknown> = {}) => ({
@@ -61,7 +61,7 @@ beforeAll(async () => {
            booking_horizon_days = 90, slot_interval_minutes = 30, timezone = 'Europe/Stockholm' where id = 1`);
   await q(`update public.business_hours set is_closed = false, opening_time = '08:00', closing_time = '17:00' where weekday between 1 and 5`);
   await q(`update public.business_hours set is_closed = true where weekday = 7`);
-  const svc = await q(`select id from public.services where slug = 'biltvatt'`);
+  const svc = await q(`select id from public.services where slug = 'enkel-tvatt'`);
   serviceId = svc.rows[0].id;
   await q(`update public.services set duration_minutes = 180, buffer_minutes = 30, is_active = true where id = $1`, [serviceId]);
   await q(`delete from public.appointments where customer_email like '%@db-test.invalid'`);

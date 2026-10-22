@@ -56,6 +56,7 @@ export function OptionCard({
   children,
   meta,
   disabled,
+  icon,
 }: {
   selected: boolean;
   onSelect: () => void;
@@ -63,6 +64,8 @@ export function OptionCard({
   children?: ReactNode;
   meta?: ReactNode;
   disabled?: boolean;
+  /** Optional minimalist icon shown before the title. */
+  icon?: ReactNode;
 }) {
   return (
     <button
@@ -76,6 +79,7 @@ export function OptionCard({
         selected
           ? 'metal-ring border-transparent bg-white/[0.06]'
           : 'border-white/[0.09] bg-ink-900 hover:border-white/25 hover:bg-white/[0.03]',
+        disabled && 'cursor-not-allowed opacity-50 hover:border-white/[0.09] hover:bg-ink-900',
       )}
     >
       <span
@@ -88,7 +92,14 @@ export function OptionCard({
         {selected && <Check className="h-3 w-3" strokeWidth={3} />}
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block text-base font-semibold text-white">{title}</span>
+        <span className="flex items-center gap-2.5 text-base font-semibold text-white">
+          {icon && (
+            <span aria-hidden className="text-silver-300">
+              {icon}
+            </span>
+          )}
+          {title}
+        </span>
         {children && <span className="mt-1.5 block text-sm leading-relaxed text-silver-400">{children}</span>}
         {meta && <span className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs tracking-wide text-silver-300">{meta}</span>}
       </span>

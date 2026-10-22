@@ -13,7 +13,7 @@ export async function chooseService(page: Page, name: string) {
 }
 
 export async function chooseWorkshop(page: Page) {
-  await booking(page).getByRole('radio', { name: /^Hos / }).click();
+  await booking(page).getByRole('radio', { name: /^Lämna bilen/ }).click();
   await booking(page).getByRole('button', { name: 'Fortsätt' }).click();
 }
 
@@ -47,5 +47,12 @@ export async function adminLogin(page: Page) {
   await page.getByLabel('E-post').fill(ADMIN_EMAIL);
   await page.getByLabel('Lösenord').fill(ADMIN_PASSWORD);
   await page.getByRole('button', { name: 'Logga in' }).click();
-  await expect(page.getByRole('heading', { name: 'Bokningar' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Översikt' })).toBeVisible();
+}
+
+/** The optional "Välj ändamål" step: pick a cause by name, or skip with "Inget särskilt val". */
+export async function chooseCharity(page: Page, name = 'Inget särskilt val') {
+  await expect(booking(page).getByRole('heading', { name: 'Välj ett ändamål att stödja' })).toBeVisible();
+  await booking(page).getByRole('radio', { name: new RegExp(`^${name}`) }).click();
+  await booking(page).getByRole('button', { name: 'Fortsätt' }).click();
 }

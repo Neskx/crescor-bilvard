@@ -40,7 +40,9 @@ export interface AppointmentRow {
   customer_phone: string;
   vehicle_information: string | null;
   registration_number: string | null;
-  location_type: 'workshop' | 'customer_address';
+  location_type: 'workshop' | 'pickup' | 'customer_address';
+  location_fee: number | null;
+  charity_name: string | null;
   service_address: string | null;
   service_postal_code: string | null;
   service_city: string | null;
@@ -68,12 +70,18 @@ export async function loadAppointment(db: SupabaseClient, id: string): Promise<A
   const { data, error } = await db
     .from('appointments')
     .select(
-      'id, booking_reference, service_name, price_snapshot, price_type_snapshot, addons, addons_total, customer_name, customer_email, customer_phone, vehicle_information, registration_number, location_type, service_address, service_postal_code, service_city, address_instructions, start_time, end_time, status, customer_notes, anonymized_at',
+      'id, booking_reference, service_name, price_snapshot, price_type_snapshot, addons, addons_total, customer_name, customer_email, customer_phone, vehicle_information, registration_number, location_type, location_fee, service_address, service_postal_code, service_city, address_instructions, start_time, end_time, status, customer_notes, anonymized_at, appointment_charity_selections(charities(name))',
     )
     .eq('id', id)
     .maybeSingle();
   if (error) throw new Error(`appointment: ${error.message}`);
-  return (data as AppointmentRow | null) ?? null;
+  if (!data) return null;
+  // One-to-one embed: PostgREST returns an object (or null); tolerate an array too.
+  const { appointment_charity_selections: sel, ...row } = data as Record<string, unknown> & {
+    appointment_charity_selections: { charities: { name: string } | null } | { charities: { name: string } | null }[] | null;
+  };
+  const selection = Array.isArray(sel) ? sel[0] : sel;
+  return { ...(row as Omit<AppointmentRow, 'charity_name'>), charity_name: selection?.charities?.name ?? null };
 }
 
 export async function logNotification(

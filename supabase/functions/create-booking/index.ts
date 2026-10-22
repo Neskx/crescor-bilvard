@@ -22,6 +22,8 @@ const BUSINESS_ERRORS: Record<string, number> = {
   service_unavailable: 409,
   addon_unavailable: 409,
   location_unavailable: 409,
+  postal_code_unsupported: 409,
+  charity_unavailable: 409,
   booking_disabled: 409,
   rate_limited: 429,
   invalid_input: 400,
@@ -76,6 +78,9 @@ Deno.serve(async (req) => {
     service_name: result.service_name as string,
     addons: (result.addons ?? []) as { id: string; name: string; price: number }[],
     addons_total: Number(result.addons_total ?? 0),
+    location_type: result.location_type as string,
+    location_fee: result.location_fee === null || result.location_fee === undefined ? null : Number(result.location_fee),
+    charity_name: (result.charity_name ?? null) as string | null,
     email: 'not_configured' as EmailStatus,
   };
 

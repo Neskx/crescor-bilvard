@@ -20,6 +20,14 @@ const BLANK: ServiceInput = {
   image_key: 'default',
   sort_order: 100,
   is_active: true,
+  duration_text: null,
+  tagline: null,
+  features: [],
+  is_highlighted: false,
+  allow_workshop: true,
+  allow_pickup: true,
+  // Not assumed: on-site washing is enabled per service once confirmed.
+  allow_mobile: false,
 };
 
 const slugify = (s: string) =>
@@ -34,6 +42,7 @@ const slugify = (s: string) =>
 function ServiceForm({ initial, id, onDone }: { initial: ServiceInput; id: string | null; onDone: () => void }) {
   const toast = useToast();
   const [f, setF] = useState<ServiceInput>(initial);
+  const [featuresText, setFeaturesText] = useState((initial.features ?? []).join('\n'));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -43,10 +52,18 @@ function ServiceForm({ initial, id, onDone }: { initial: ServiceInput; id: strin
     if (f.name.trim().length < 2) return setError('Ange ett namn.');
     if (f.duration_minutes < 15 || f.duration_minutes > 720) return setError('Tiden måste vara mellan 15 och 720 minuter.');
     if (f.price_type !== 'on_request' && (f.price === null || Number.isNaN(f.price) || f.price < 0)) return setError('Ange ett giltigt pris, eller välj "Pris enligt offert".');
+    const features = featuresText
+      .split('\n')
+      .map((x) => x.trim())
+      .filter(Boolean);
+    if (features.length > 15 || features.some((x) => x.length > 120)) return setError('Högst 15 punkter i "Det här ingår", var och en högst 120 tecken.');
     setBusy(true);
     try {
       await saveService(id, {
         ...f,
+        features,
+        duration_text: f.duration_text?.trim() || null,
+        tagline: f.tagline?.trim() || null,
         name: f.name.trim(),
         description: f.description.trim(),
         slug: f.slug || slugify(f.name) || `tjanst-${Date.now()}`,
@@ -74,7 +91,22 @@ function ServiceForm({ initial, id, onDone }: { initial: ServiceInput; id: strin
           <textarea id="sv-desc" rows={3} maxLength={600} className="field-input" value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} />
         </Field>
       </div>
-      <Field id="sv-dur" label="Tid (min)" hint="Styr hur lång tid som bokas.">
+      <div className="sm:col-span-4">
+        <Field id="sv-features" label="Det här ingår" optional hint="En punkt per rad. Visas som en checklista på paketet.">
+          <textarea id="sv-features" rows={5} className="field-input" value={featuresText} onChange={(e) => setFeaturesText(e.target.value)} />
+        </Field>
+      </div>
+      <div className="sm:col-span-2">
+        <Field id="sv-durtext" label="Tid som visas för kunden" optional hint='T.ex. "3–3,5 timmar". Tomt = bokad tid visas.'>
+          <input id="sv-durtext" className="field-input" maxLength={40} value={f.duration_text ?? ''} onChange={(e) => setF({ ...f, duration_text: e.target.value })} />
+        </Field>
+      </div>
+      <div className="sm:col-span-2">
+        <Field id="sv-tagline" label="Etikett" optional hint='Kort märkning, t.ex. "Bas". Undvik påståenden som inte är bekräftade.'>
+          <input id="sv-tagline" className="field-input" maxLength={40} value={f.tagline ?? ''} onChange={(e) => setF({ ...f, tagline: e.target.value })} />
+        </Field>
+      </div>
+      <Field id="sv-dur" label="Bokad tid (min)" hint="Styr hur lång tid som reserveras i kalendern.">
         <input id="sv-dur" type="number" min={15} max={720} step={5} className="field-input" value={f.duration_minutes} onChange={(e) => setF({ ...f, duration_minutes: Number(e.target.value) })} />
       </Field>
       <Field id="sv-buf" label="Buffert (min)" hint="Ställtid efter bokningen.">
@@ -113,7 +145,16 @@ function ServiceForm({ initial, id, onDone }: { initial: ServiceInput; id: strin
       </Field>
       <div className="sm:col-span-2">
         <Toggle checked={f.is_active} onChange={(v) => setF({ ...f, is_active: v })} label="Aktiv" description="Inaktiva tjänster visas inte och kan inte bokas online." />
+        <Toggle checked={f.is_highlighted} onChange={(v) => setF({ ...f, is_highlighted: v })} label="Framhävd" description="Visas med silverram, t.ex. för det mest omfattande paketet." />
       </div>
+      <fieldset className="sm:col-span-4">
+        <legend className="field-label">Erbjuds för</legend>
+        <div className="grid gap-x-6 sm:grid-cols-3">
+          <Toggle checked={f.allow_workshop} onChange={(v) => setF({ ...f, allow_workshop: v })} label="Lämna bilen" />
+          <Toggle checked={f.allow_pickup} onChange={(v) => setF({ ...f, allow_pickup: v })} label="Vi hämtar bilen" />
+          <Toggle checked={f.allow_mobile} onChange={(v) => setF({ ...f, allow_mobile: v })} label="Tvätt på plats" />
+        </div>
+      </fieldset>
       {error && (
         <div className="sm:col-span-4">
           <Alert tone="error">{error}</Alert>
@@ -165,8 +206,8 @@ export function ServicesView() {
   return (
     <div className="max-w-4xl">
       <PageHeader
-        title="Tjänster"
-        sub="Namn, tid, pris och vilka tjänster och tillägg som går att boka."
+        title="Tjänster & priser"
+        sub="Paket, priser, vad som ingår, tider och var varje paket erbjuds. Befintliga bokningar behåller sitt pris och namn."
         actions={
           <button type="button" className="btn btn-metal btn-sm" onClick={() => setEditing('new')}>
             <Plus className="h-4 w-4" aria-hidden /> Ny tjänst
@@ -194,7 +235,7 @@ export function ServicesView() {
                   {s.name} {!s.is_active && <span className="ml-2 border border-white/15 px-1.5 text-[0.65rem] text-silver-500">INAKTIV</span>}
                 </p>
                 <p className="mt-1 text-sm text-silver-400">
-                  {formatDuration(s.duration_minutes)} + {s.buffer_minutes} min buffert · {formatPrice(s.price, s.price_type) ?? 'Pris enligt offert'}
+                  {formatDuration(s.duration_minutes)} + {s.buffer_minutes} min buffert · {formatPrice(s.price, s.price_type) ?? 'Pris enligt offert'} · {[s.allow_workshop && 'Lämna', s.allow_pickup && 'Hämtning', s.allow_mobile && 'På plats'].filter(Boolean).join(', ') || 'Ingen plats vald'}
                 </p>
               </div>
               <div className="flex gap-2">

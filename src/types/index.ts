@@ -1,5 +1,5 @@
 export type PriceType = 'fixed' | 'from' | 'on_request';
-export type LocationType = 'workshop' | 'customer_address';
+export type LocationType = 'workshop' | 'pickup' | 'customer_address';
 export type AppointmentStatus = 'pending' | 'confirmed' | 'cancelled' | 'completed';
 export type EmailStatus = 'sent' | 'failed' | 'not_configured';
 
@@ -12,6 +12,14 @@ export interface Service {
   price: number | null;
   price_type: PriceType;
   image_key: string | null;
+  /** Customer-facing estimate, e.g. "1,5–2 timmar". Scheduling uses duration_minutes. */
+  duration_text?: string | null;
+  tagline?: string | null;
+  features?: string[];
+  is_highlighted?: boolean;
+  allow_workshop?: boolean;
+  allow_pickup?: boolean;
+  allow_mobile?: boolean;
 }
 
 /** Optional extra (tillägg) booked together with a service. */
@@ -41,7 +49,16 @@ export interface PublicSettings {
   timezone: string;
   booking_enabled: boolean;
   workshop_available: boolean;
+  pickup_available?: boolean;
   mobile_available: boolean;
+  workshop_instructions?: string | null;
+  pickup_info_text?: string | null;
+  pickup_area_text?: string | null;
+  pickup_fee?: number | null;
+  mobile_fee?: number | null;
+  pickup_postal_prefixes?: string[];
+  mobile_postal_prefixes?: string[];
+  charity_enabled?: boolean;
   auto_confirm: boolean;
   booking_notice_hours: number;
   booking_horizon_days: number;
@@ -54,11 +71,50 @@ export interface BusinessHour {
   is_closed: boolean;
 }
 
+export interface Partner {
+  id: string;
+  name: string;
+  /** Bundled (/partners/…) or uploaded (https://…) logo. NULL = text placeholder. */
+  logo_url: string | null;
+  logo_background: 'light' | 'dark';
+  website_url: string | null;
+}
+
+export interface Charity {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  website_url: string | null;
+  logo_url: string | null;
+}
+
+/** A completed (actually paid) donation total. Only these are ever public. */
+export interface PublicDonation {
+  charity_name: string;
+  amount: number;
+  last_completed_at: string | null;
+}
+
+export interface PublicReview {
+  id: string;
+  display_name: string;
+  rating: number;
+  body: string;
+  service_name: string | null;
+  verified: boolean;
+  published_at: string | null;
+}
+
 export interface PublicConfig {
   settings: PublicSettings;
   services: Service[];
   addons: Addon[];
   business_hours: BusinessHour[];
+  partners: Partner[];
+  charities: Charity[];
+  donations: PublicDonation[];
+  reviews: PublicReview[];
 }
 
 export interface Slot {
@@ -75,6 +131,9 @@ export interface BookingResult {
   service_name: string;
   addons?: BookedAddon[];
   addons_total?: number;
+  location_type?: LocationType;
+  location_fee?: number | null;
+  charity_name?: string | null;
   email: EmailStatus;
   duplicate: boolean;
 }
@@ -96,6 +155,9 @@ export interface Appointment {
   vehicle_information: string | null;
   registration_number: string | null;
   location_type: LocationType;
+  travel_minutes: number;
+  location_fee: number | null;
+  blocked_from: string;
   service_address: string | null;
   service_postal_code: string | null;
   service_city: string | null;
@@ -114,6 +176,13 @@ export interface Appointment {
 }
 
 export interface AdminService extends Service {
+  duration_text: string | null;
+  tagline: string | null;
+  features: string[];
+  is_highlighted: boolean;
+  allow_workshop: boolean;
+  allow_pickup: boolean;
+  allow_mobile: boolean;
   buffer_minutes: number;
   sort_order: number;
   is_active: boolean;
@@ -139,7 +208,18 @@ export interface AdminSettings {
   timezone: string;
   booking_enabled: boolean;
   workshop_service_enabled: boolean;
+  pickup_service_enabled: boolean;
   mobile_service_enabled: boolean;
+  workshop_instructions: string | null;
+  pickup_info_text: string | null;
+  pickup_area_text: string | null;
+  pickup_fee: number | null;
+  mobile_fee: number | null;
+  pickup_travel_minutes: number;
+  mobile_travel_minutes: number;
+  pickup_postal_prefixes: string[];
+  mobile_postal_prefixes: string[];
+  charity_enabled: boolean;
   auto_confirm: boolean;
   booking_notice_hours: number;
   booking_horizon_days: number;
@@ -174,4 +254,64 @@ export interface NotificationLogEntry {
   status: EmailStatus;
   error: string | null;
   created_at: string;
+}
+
+export type ReviewStatus = 'pending' | 'approved' | 'rejected' | 'hidden';
+
+export interface AdminReview {
+  id: string;
+  appointment_id: string | null;
+  display_name: string;
+  rating: number;
+  body: string;
+  service_name: string | null;
+  verified: boolean;
+  status: ReviewStatus;
+  admin_note: string | null;
+  reported_at: string | null;
+  created_at: string;
+  moderated_at: string | null;
+  published_at: string | null;
+}
+
+export interface AdminPartner extends Partner {
+  sort_order: number;
+  is_visible: boolean;
+  admin_note: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdminCharity extends Charity {
+  is_active: boolean;
+  sort_order: number;
+  admin_note: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type DonationStatus = 'planned' | 'approved' | 'completed';
+
+export interface DonationAllocation {
+  id: string;
+  charity_id: string;
+  accounting_period: string;
+  amount: number;
+  status: DonationStatus;
+  reference: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  approved_at: string | null;
+  completed_at: string | null;
+}
+
+export interface CharitySummaryRow {
+  charity_id: string;
+  name: string;
+  is_active: boolean;
+  selections: number;
+  planned_amount: number;
+  approved_amount: number;
+  completed_amount: number;
 }

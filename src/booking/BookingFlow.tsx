@@ -1,22 +1,27 @@
-import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { Stepper } from './Stepper';
 import { StepService } from './steps/StepService';
 import { StepLocation } from './steps/StepLocation';
+import { LOCATION_LABEL, locationAvailable } from './locations';
 import { StepDateTime } from './steps/StepDateTime';
 import { StepDetails } from './steps/StepDetails';
+import { StepCharity } from './steps/StepCharity';
 import { StepSummary } from './steps/StepSummary';
 import { BookingSuccess, type SuccessInfo } from './steps/BookingSuccess';
 import {
-  STEPS,
   addressErrors,
   clearDraft,
   detailErrors,
   isStepComplete,
   loadDraft,
   maxReachableIndex,
+  needsAddress,
+  nextStep,
   reducer,
   saveDraft,
+  stepsFor,
   type Draft,
+  type FlowContext,
   type StepId,
 } from './draft';
 import { invalidateSlots } from './useSlots';
@@ -31,6 +36,7 @@ import type { LocationType, PublicConfig } from '../types';
 const SUCCESS_KEY = 'crescor-booking-success';
 const ADDRESS_FIELDS = ['service_address', 'service_postal_code', 'service_city', 'address_instructions'];
 const TIME_CODES = ['slot_unavailable', 'time_in_past', 'too_soon', 'too_far', 'outside_business_hours'];
+const LOCATIONS: LocationType[] = ['workshop', 'pickup', 'customer_address'];
 
 function loadSuccess(): SuccessInfo | null {
   try {
@@ -41,10 +47,8 @@ function loadSuccess(): SuccessInfo | null {
   }
 }
 
-const stepIndex = (s: StepId) => STEPS.findIndex((x) => x.id === s);
-
 export function BookingFlow({ config, reload }: { config: PublicConfig; reload: () => Promise<PublicConfig | null> }) {
-  const { settings, services, addons, business_hours } = config;
+  const { settings, services, addons, business_hours, charities } = config;
   const [draft, dispatch] = useReducer(reducer, undefined, loadDraft);
   const [success, setSuccess] = useState<SuccessInfo | null>(loadSuccess);
   const [submitting, setSubmitting] = useState(false);
@@ -58,13 +62,26 @@ export function BookingFlow({ config, reload }: { config: PublicConfig; reload: 
   const inFlight = useRef(false);
   const lastStep = useRef(draft.step);
 
+  const ctx: FlowContext = useMemo(
+    () => ({
+      charityStep: Boolean(settings.charity_enabled) && charities.length > 0,
+      pickupPrefixes: settings.pickup_postal_prefixes ?? [],
+      mobilePrefixes: settings.mobile_postal_prefixes ?? [],
+    }),
+    [settings, charities],
+  );
+  const steps = stepsFor(ctx);
+  const stepIndex = (s: StepId) => steps.findIndex((x) => x.id === s);
+
   const service = services.find((s) => s.id === draft.serviceId) ?? null;
   const chosenAddons = addons.filter((a) => draft.addonIds.includes(a.id));
+  const chosenCharity = charities.find((c) => c.id === draft.charity) ?? null;
 
   useEffect(() => saveDraft(draft), [draft]);
 
   // ---- Keep the draft consistent with the live configuration ------------------
-  // (service disabled, location option switched off, chosen time passed, …)
+  // (service disabled, location switched off or not offered for the service,
+  //  cause deactivated, chosen time passed, …)
   useEffect(() => {
     const patch: Partial<Draft> = {};
     let message: string | null = null;
@@ -73,7 +90,6 @@ export function BookingFlow({ config, reload }: { config: PublicConfig; reload: 
       Object.assign(patch, { serviceId: null, slot: null });
       message = 'Den tjänst du hade valt går inte längre att boka. Välj en annan tjänst.';
     }
-    // With a single bookable service there is nothing to choose: pre-select it.
     if (!(patch.serviceId ?? draft.serviceId) && services.length === 1) {
       Object.assign(patch, { serviceId: services[0].id, slot: null });
     }
@@ -82,15 +98,23 @@ export function BookingFlow({ config, reload }: { config: PublicConfig; reload: 
       patch.addonIds = validAddons;
       message ??= 'Ett eller flera av dina valda tillägg erbjuds inte längre och har tagits bort.';
     }
-    const locationAllowed = (t: LocationType) => (t === 'workshop' ? settings.workshop_available : settings.mobile_available);
-    const options: LocationType[] = [];
-    if (settings.workshop_available) options.push('workshop');
-    if (settings.mobile_available) options.push('customer_address');
-    if (draft.locationType && !locationAllowed(draft.locationType)) {
-      patch.locationType = options.length === 1 ? options[0] : null;
-      message ??= 'Det platsalternativ du valt är inte längre tillgängligt. Kontrollera ditt val.';
+
+    const svc = services.find((s) => s.id === (patch.serviceId !== undefined ? patch.serviceId : draft.serviceId)) ?? null;
+    const usable = (t: LocationType) => {
+      const a = locationAvailable(settings, svc, t);
+      return a.enabled && a.allowed;
+    };
+    const options = LOCATIONS.filter(usable);
+    if (draft.locationType && !usable(draft.locationType)) {
+      Object.assign(patch, { locationType: options.length === 1 ? options[0] : null, slot: null });
+      message ??= 'Det platsalternativ du valt är inte längre tillgängligt för den här tjänsten. Kontrollera ditt val.';
     } else if (!draft.locationType && options.length === 1) {
       patch.locationType = options[0];
+    }
+
+    if (draft.charity && draft.charity !== 'none' && !charities.some((c) => c.id === draft.charity)) {
+      patch.charity = null;
+      if (ctx.charityStep) message ??= 'Det ändamål du valt finns inte längre med. Välj ett annat ändamål.';
     }
     if (draft.slot && new Date(draft.slot.start).getTime() <= Date.now()) {
       patch.slot = null;
@@ -98,8 +122,9 @@ export function BookingFlow({ config, reload }: { config: PublicConfig; reload: 
     }
 
     const merged = { ...draft, ...patch };
-    const reachable = maxReachableIndex(merged);
-    if (stepIndex(merged.step) > reachable) patch.step = STEPS[reachable].id;
+    const reachable = maxReachableIndex(merged, ctx);
+    const idx = steps.findIndex((s) => s.id === merged.step);
+    if (idx === -1 || idx > reachable) patch.step = steps[reachable].id;
 
     if (Object.keys(patch).length) dispatch({ type: 'repair', patch });
     if (message) setNotice(message);
@@ -135,6 +160,16 @@ export function BookingFlow({ config, reload }: { config: PublicConfig; reload: 
     [services],
   );
 
+  // A newly selected service may not be offered at the chosen location.
+  useEffect(() => {
+    if (!draft.locationType || !service) return;
+    const a = locationAvailable(settings, service, draft.locationType);
+    if (!a.allowed) {
+      dispatch({ type: 'setLocation', value: null });
+      setNotice(`${LOCATION_LABEL[draft.locationType]} erbjuds inte för ${service.name}. Välj ett annat platsalternativ.`);
+    }
+  }, [service, draft.locationType, settings]);
+
   // Move focus to the new step's heading — only when the step actually
   // changes, never on page load (also safe under StrictMode's double effects).
   useEffect(() => {
@@ -163,18 +198,19 @@ export function BookingFlow({ config, reload }: { config: PublicConfig; reload: 
   const onSlot = useCallback((slot: { start: string; end: string } | null) => dispatch({ type: 'selectSlot', slot }), []);
   const onWeek = useCallback((weekStart: string) => dispatch({ type: 'setWeek', weekStart }), []);
 
-  const locationText = (d: Draft) =>
-    d.locationType === 'workshop'
-      ? `${settings.company_name}${settings.company_address ? `, ${settings.company_address}` : ''}`
-      : `${d.address.service_address}, ${d.address.service_postal_code} ${d.address.service_city}`;
+  const locationText = (d: Draft) => {
+    if (d.locationType === 'workshop') return `${settings.company_name}${settings.company_address ? `, ${settings.company_address}` : ''}`;
+    const address = `${d.address.service_address}, ${d.address.service_postal_code} ${d.address.service_city}`;
+    return d.locationType === 'pickup' ? `Vi hämtar bilen: ${address}` : `Tvätt på plats: ${address}`;
+  };
 
   // ---- Submit ---------------------------------------------------------------------
   async function submit() {
     if (inFlight.current) return; // guards rapid double clicks synchronously
     setSubmitError(null);
 
-    for (const s of STEPS.slice(0, -1)) {
-      if (!isStepComplete(draft, s.id)) {
+    for (const s of steps.slice(0, -1)) {
+      if (!isStepComplete(draft, s.id, ctx)) {
         go(s.id);
         return;
       }
@@ -197,6 +233,7 @@ export function BookingFlow({ config, reload }: { config: PublicConfig; reload: 
         idempotency_key: draft.idempotencyKey,
         service_id: service.id,
         addon_ids: chosenAddons.map((a) => a.id),
+        charity_id: ctx.charityStep && chosenCharity ? chosenCharity.id : undefined,
         start_time: draft.slot.start,
         location_type: draft.locationType,
         customer_name: d.customer_name,
@@ -205,7 +242,7 @@ export function BookingFlow({ config, reload }: { config: PublicConfig; reload: 
         vehicle_information: d.vehicle_information || undefined,
         registration_number: d.registration_number || undefined,
         customer_notes: d.customer_notes || undefined,
-        ...(draft.locationType === 'customer_address' ? draft.address : {}),
+        ...(needsAddress(draft.locationType) ? draft.address : {}),
         privacy_accepted: true,
         captcha_token: captcha ?? undefined,
       });
@@ -246,6 +283,17 @@ export function BookingFlow({ config, reload }: { config: PublicConfig; reload: 
         dispatch({ type: 'setLocation', value: null });
         setNotice(msg);
         go('location');
+      } else if (err.code === 'postal_code_unsupported') {
+        await reload();
+        setServerFieldErrors({ service_postal_code: msg });
+        setNotice(msg);
+        go('location');
+      } else if (err.code === 'charity_unavailable') {
+        // Nothing else is lost: only the cause needs to be chosen again.
+        await reload();
+        dispatch({ type: 'setCharity', value: null });
+        setNotice(msg);
+        go('charity');
       } else if (err.code === 'booking_disabled') {
         setSubmitError(msg);
         void reload();
@@ -253,7 +301,7 @@ export function BookingFlow({ config, reload }: { config: PublicConfig; reload: 
         const fields = err.fieldErrors ?? { [err.field!]: 'Kontrollera uppgiften.' };
         setServerFieldErrors(fields);
         setNotice(msg);
-        go(Object.keys(fields).some((f) => ADDRESS_FIELDS.includes(f)) ? 'location' : 'details');
+        go(Object.keys(fields).some((f) => ADDRESS_FIELDS.includes(f)) ? 'location' : Object.keys(fields).includes('charity_id') ? 'charity' : 'details');
       } else if (err.kind === 'timeout' || err.kind === 'network' || err.kind === 'offline') {
         setSubmitError(
           `${msg} Om anslutningen bröts medan bokningen skickades kan den redan vara registrerad – försök igen, du blir inte dubbelbokad.`,
@@ -288,9 +336,14 @@ export function BookingFlow({ config, reload }: { config: PublicConfig; reload: 
     );
   }
 
+  const step = stepIndex(draft.step) === -1 ? steps[0].id : draft.step;
+  const back = (s: StepId) => () => go(nextStep(s, ctx, -1));
+  const forward = (s: StepId) => () => go(nextStep(s, ctx, 1));
+  const locationErrors = { ...addressErrors(draft, ctx), ...Object.fromEntries(Object.entries(serverFieldErrors ?? {}).filter(([k]) => ADDRESS_FIELDS.includes(k))) };
+
   return (
     <div ref={rootRef} data-anchor>
-      <Stepper current={draft.step} maxReachable={maxReachableIndex(draft)} onGo={go} />
+      <Stepper steps={steps} current={step} maxReachable={maxReachableIndex(draft, ctx)} onGo={go} />
 
       {notice && (
         <Alert tone="warning" className="mb-8" action={<button type="button" className="text-xs underline" onClick={() => setNotice(null)}>Stäng</button>}>
@@ -298,7 +351,7 @@ export function BookingFlow({ config, reload }: { config: PublicConfig; reload: 
         </Alert>
       )}
 
-      {draft.step === 'service' && (
+      {step === 'service' && (
         <StepService
           services={services}
           addons={addons}
@@ -306,47 +359,52 @@ export function BookingFlow({ config, reload }: { config: PublicConfig; reload: 
           selectedAddonIds={draft.addonIds}
           onSelect={(id) => dispatch({ type: 'selectService', id })}
           onToggleAddon={(id) => dispatch({ type: 'toggleAddon', id })}
-          onNext={() => go('location')}
+          onNext={forward('service')}
           titleRef={titleRef}
         />
       )}
 
-      {draft.step === 'location' && (
+      {step === 'location' && (
         <StepLocation
           settings={settings}
+          service={service}
           locationType={draft.locationType}
           address={draft.address}
-          errors={{ ...addressErrors(draft) }}
-          onLocation={(value) => dispatch({ type: 'setLocation', value })}
+          errors={locationErrors}
+          onLocation={(value) => {
+            setServerFieldErrors(undefined);
+            dispatch({ type: 'setLocation', value });
+          }}
           onAddress={(field, value) => {
             setServerFieldErrors(undefined);
             dispatch({ type: 'setAddress', field, value });
           }}
-          onBack={() => go('service')}
-          onNext={() => go('time')}
+          onBack={back('location')}
+          onNext={forward('location')}
           titleRef={titleRef}
         />
       )}
 
-      {draft.step === 'time' && service && (
+      {step === 'time' && service && (
         <StepDateTime
           service={service}
+          location={draft.locationType}
           settings={settings}
           businessHours={business_hours}
           weekStart={draft.weekStart}
           slot={draft.slot}
           onWeek={onWeek}
           onSlot={onSlot}
-          onBack={() => go('location')}
+          onBack={back('time')}
           onNext={() => {
             setNotice(null);
-            go('details');
+            forward('time')();
           }}
           titleRef={titleRef}
         />
       )}
 
-      {draft.step === 'details' && (
+      {step === 'details' && (
         <StepDetails
           details={draft.details}
           errors={detailErrors(draft)}
@@ -355,18 +413,31 @@ export function BookingFlow({ config, reload }: { config: PublicConfig; reload: 
             setServerFieldErrors(undefined);
             dispatch({ type: 'setDetail', field, value });
           }}
-          onBack={() => go('time')}
-          onNext={() => go('summary')}
+          onBack={back('details')}
+          onNext={forward('details')}
           titleRef={titleRef}
         />
       )}
 
-      {draft.step === 'summary' && service && (
+      {step === 'charity' && ctx.charityStep && (
+        <StepCharity
+          charities={charities}
+          value={draft.charity}
+          onChange={(value) => dispatch({ type: 'setCharity', value })}
+          onBack={back('charity')}
+          onNext={forward('charity')}
+          titleRef={titleRef}
+        />
+      )}
+
+      {step === 'summary' && service && (
         <StepSummary
           draft={draft}
           service={service}
           addons={chosenAddons}
           settings={settings}
+          charity={chosenCharity}
+          charityStep={ctx.charityStep}
           submitting={submitting}
           error={submitError}
           onPrivacy={(value) => {
@@ -376,7 +447,7 @@ export function BookingFlow({ config, reload }: { config: PublicConfig; reload: 
           onCaptcha={setCaptcha}
           captchaRef={captchaRef}
           onEdit={go}
-          onBack={() => go('details')}
+          onBack={back('summary')}
           onSubmit={() => void submit()}
           titleRef={titleRef}
         />

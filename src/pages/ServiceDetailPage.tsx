@@ -1,5 +1,5 @@
-import { Link, useParams } from 'react-router-dom';
-import { ArrowRight, ArrowUpRight, Clock, MapPin, Tag, Truck } from 'lucide-react';
+import { Link, Navigate, useParams } from 'react-router-dom';
+import { ArrowRight, ArrowUpRight, Check, Clock, MapPin, Tag } from 'lucide-react';
 import { SiteLayout } from '../components/SiteLayout';
 import { PageHero } from '../components/PageHero';
 import { CtaBand, ProcessSteps } from '../components/Blocks';
@@ -8,7 +8,7 @@ import { AddonPriceList } from '../components/AddonPriceList';
 import { usePageMeta } from '../hooks/usePageMeta';
 import { usePublicConfig } from '../hooks/usePublicConfig';
 import { useReveal } from '../hooks/useReveal';
-import { serviceImage } from '../config/site';
+import { LEGACY_SERVICE_SLUGS, serviceImage } from '../config/site';
 import { formatDuration } from '../lib/datetime';
 import { formatPrice } from '../lib/format';
 import { NotFoundContent } from './NotFoundPage';
@@ -19,15 +19,21 @@ export function ServiceDetailPage() {
   const ref = useReveal<HTMLElement>();
   const service = config.services.find((s) => s.slug === slug);
   const s = config.settings;
+  const price = service ? formatPrice(service.price, service.price_type) : null;
 
   usePageMeta({
-    title: service ? `${service.name} – boka online` : 'Tjänsten hittades inte',
+    title: service ? `${service.name}${price ? ` ${price}` : ''} – boka online` : 'Tjänsten hittades inte',
     description: service
-      ? `${service.description} Boka ${service.name.toLowerCase()} online hos Crescor Bilvård.`
+      ? `${service.description} Beräknad tid ca ${service.duration_text || formatDuration(service.duration_minutes)}. Boka ${service.name} online hos Crescor Bilvård.`
       : 'Tjänsten kunde inte hittas.',
     path: `/tjanster/${slug}`,
     noindex: !service && status !== 'loading',
   });
+
+  // Old links (e.g. /tjanster/biltvatt) lead to the service that replaced them.
+  if (!service && LEGACY_SERVICE_SLUGS[slug]) {
+    return <Navigate to={`/tjanster/${LEGACY_SERVICE_SLUGS[slug]}`} replace />;
+  }
 
   if (status === 'loading') {
     return (
@@ -48,21 +54,24 @@ export function ServiceDetailPage() {
   }
 
   const img = serviceImage(service.image_key);
-  const price = formatPrice(service.price, service.price_type);
   const bookable = live && s.booking_enabled;
   const others = config.services.filter((x) => x.id !== service.id).slice(0, 3);
+  const workshop = s.workshop_available && service.allow_workshop !== false;
+  const pickup = Boolean(s.pickup_available) && service.allow_pickup !== false;
+  const mobile = s.mobile_available && service.allow_mobile !== false;
+  const features = service.features ?? [];
 
   return (
     <SiteLayout>
       <PageHero
-        eyebrow="Tjänst"
+        eyebrow={service.tagline || 'Tjänst'}
         title={service.name}
         lead={service.description}
         image={img.src}
         crumbs={[{ label: 'Våra tjänster', to: '/tjanster' }, { label: service.name }]}
       >
         <Link to={bookable ? `/boka?tjanst=${encodeURIComponent(service.slug)}` : '/kontakt'} className="btn btn-metal">
-          {bookable ? 'Boka tid' : 'Kontakta oss'} <ArrowRight className="h-4 w-4" aria-hidden />
+          {bookable ? 'Boka denna tjänst' : 'Kontakta oss'} <ArrowRight className="h-4 w-4" aria-hidden />
         </Link>
       </PageHero>
 
@@ -78,7 +87,7 @@ export function ServiceDetailPage() {
                 <dt className="eyebrow flex items-center gap-3">
                   <Clock className="h-4 w-4 text-silver-400" strokeWidth={1.5} aria-hidden /> Beräknad tid
                 </dt>
-                <dd className="mt-2 pl-7 text-white">ca {formatDuration(service.duration_minutes)}</dd>
+                <dd className="mt-2 pl-7 text-white">ca {service.duration_text || formatDuration(service.duration_minutes)}</dd>
               </div>
               <div className="py-5">
                 <dt className="eyebrow flex items-center gap-3">
@@ -86,23 +95,32 @@ export function ServiceDetailPage() {
                 </dt>
                 <dd className="mt-2 pl-7 text-white">{price ?? 'Enligt offert – vi ger besked utifrån bilens skick.'}</dd>
               </div>
-              {(s.workshop_available || s.mobile_available) && (
+              {(workshop || pickup || mobile) && (
                 <div className="py-5">
                   <dt className="eyebrow flex items-center gap-3">
-                    {s.mobile_available ? (
-                      <Truck className="h-4 w-4 text-silver-400" strokeWidth={1.5} aria-hidden />
-                    ) : (
-                      <MapPin className="h-4 w-4 text-silver-400" strokeWidth={1.5} aria-hidden />
-                    )}
+                    <MapPin className="h-4 w-4 text-silver-400" strokeWidth={1.5} aria-hidden />
                     Plats
                   </dt>
                   <dd className="mt-2 space-y-1 pl-7 text-white">
-                    {s.workshop_available && <p>Hos oss{s.company_address ? ` – ${s.company_address}` : ''}</p>}
-                    {s.mobile_available && <p>På din adress{s.service_area_text ? ` (${s.service_area_text})` : ''}</p>}
+                    {workshop && <p>Lämna bilen hos oss{s.company_address ? ` – ${s.company_address}` : ''}</p>}
+                    {pickup && <p>Vi hämtar bilen{s.pickup_area_text ? ` (${s.pickup_area_text})` : ''}</p>}
+                    {mobile && <p>Tvätt på plats{s.service_area_text ? ` (${s.service_area_text})` : ''}</p>}
                   </dd>
                 </div>
               )}
             </dl>
+            {features.length > 0 && (
+              <div className="mt-8">
+                <p className="eyebrow">Det här ingår</p>
+                <ul className="mt-4 space-y-2.5">
+                  {features.map((f) => (
+                    <li key={f} className="flex items-start gap-2.5 text-silver-200">
+                      <Check className="mt-1 h-4 w-4 shrink-0 text-silver-400" aria-hidden /> {f}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             <p className="mt-6 text-sm leading-relaxed text-silver-400">
               Tiden är en uppskattning och kan variera med bilens storlek och skick. Berätta gärna om särskilda önskemål när du
               bokar.
@@ -111,7 +129,7 @@ export function ServiceDetailPage() {
               to={bookable ? `/boka?tjanst=${encodeURIComponent(service.slug)}` : '/kontakt'}
               className="btn btn-metal mt-8 w-full sm:w-auto"
             >
-              {bookable ? `Boka ${service.name.toLowerCase()}` : 'Kontakta oss'} <ArrowRight className="h-4 w-4" aria-hidden />
+              {bookable ? 'Boka denna tjänst' : 'Kontakta oss'} <ArrowRight className="h-4 w-4" aria-hidden />
             </Link>
           </div>
         </div>
@@ -131,11 +149,12 @@ export function ServiceDetailPage() {
         <section aria-labelledby="fler-title" className="bg-ink-950 py-24">
           <div className="container-lux">
             <h2 id="fler-title" className="font-display text-4xl font-semibold text-white sm:text-5xl">
-              Fler tjänster
+              Fler paket
             </h2>
             <ul className="mt-10 grid gap-5 md:grid-cols-3">
               {others.map((o) => {
                 const oi = serviceImage(o.image_key);
+                const op = formatPrice(o.price, o.price_type);
                 return (
                   <li key={o.id}>
                     <Link
@@ -146,7 +165,10 @@ export function ServiceDetailPage() {
                         <Img src={oi.src} alt={oi.alt} className="h-full w-full object-cover transition-transform duration-[1.2s] group-hover:scale-105" />
                       </div>
                       <div className="flex items-center justify-between p-5">
-                        <span className="font-display text-2xl font-semibold text-white">{o.name}</span>
+                        <span>
+                          <span className="font-display block text-2xl font-semibold text-white">{o.name}</span>
+                          {op && <span className="text-sm text-silver-400">{op}</span>}
+                        </span>
                         <ArrowUpRight className="h-5 w-5 text-silver-400 transition-colors group-hover:text-white" aria-hidden />
                       </div>
                     </Link>

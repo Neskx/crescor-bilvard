@@ -1,14 +1,15 @@
 // POST /functions/v1/admin-notify
 // Sends confirmation / cancellation / rescheduling emails to a customer after an
-// administrator has changed a booking. Requires a valid admin session.
+// administrator has changed a booking, and review invitations for completed
+// bookings. Requires a valid admin session.
 
 import { json, logError, preflight, readJson } from '../_shared/http.ts';
 import { loadAppointment, loadSettings, logNotification, serviceClient } from '../_shared/supabase.ts';
 import { isUuid } from '../_shared/validation.ts';
 import { sendEmail } from '../_shared/email.ts';
-import { customerStatusEmail } from '../_shared/emailTemplates.ts';
+import { customerStatusEmail, reviewInviteEmail } from '../_shared/emailTemplates.ts';
 
-const KINDS = ['confirmed', 'cancelled', 'rescheduled'] as const;
+const KINDS = ['confirmed', 'cancelled', 'rescheduled', 'review_invite'] as const;
 type Kind = (typeof KINDS)[number];
 
 Deno.serve(async (req) => {
@@ -54,6 +55,20 @@ Deno.serve(async (req) => {
     const [appointment, settings] = await Promise.all([loadAppointment(db, body.appointment_id), loadSettings(db)]);
     if (!appointment) return json(req, { ok: false, code: 'not_found' }, 404);
     if (appointment.anonymized_at) return json(req, { ok: false, code: 'anonymized' }, 409);
+
+    if (kind === 'review_invite') {
+      // The review page lives on the public website (secret SITE_URL).
+      const site = Deno.env.get('SITE_URL')?.replace(/\/+$/, '');
+      if (!site) return json(req, { ok: false, code: 'site_url_missing' }, 409);
+      const { data: issued, error: issueError } = await db.rpc('issue_review_invitation', { p_appointment_id: appointment.id });
+      if (issueError || !issued) throw issueError ?? new Error('empty result');
+      if (!issued.ok) return json(req, { ok: false, code: issued.code }, 409);
+      const link = `${site}/recension?t=${encodeURIComponent(issued.token as string)}`;
+      const result = await sendEmail({ to: appointment.customer_email, ...reviewInviteEmail(appointment, settings, link), replyTo: settings.company_email ?? undefined });
+      await logNotification(db, { appointment_id: appointment.id, kind, status: result.status, provider_id: result.providerId, error: result.error });
+      // The link goes back to the administrator so it can be shared manually if e-mail fails.
+      return json(req, { ok: true, email: result.status, link }, 200);
+    }
 
     const mail = customerStatusEmail(kind, appointment, settings, previousStart);
     const result = await sendEmail({ to: appointment.customer_email, ...mail, replyTo: settings.company_email ?? undefined });

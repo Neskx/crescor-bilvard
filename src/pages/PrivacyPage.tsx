@@ -60,9 +60,11 @@ export function PrivacyPage() {
           <ul>
             <li>namn, e-postadress och telefonnummer,</li>
             <li>vald tjänst, datum och tid,</li>
-            <li>adress, om arbetet ska utföras hos dig,</li>
+            <li>adress, om vi hämtar bilen eller utför arbetet hos dig,</li>
             <li>bilmärke, modell och registreringsnummer om du väljer att ange dem,</li>
-            <li>övrig information du själv skriver i bokningen.</li>
+            <li>övrig information du själv skriver i bokningen,</li>
+            <li>det välgörande ändamål du eventuellt väljer att stödja (sparas som en preferens kopplad till bokningen),</li>
+            <li>en recension, om du väljer att lämna en via den personliga länk du får efter besöket. Publicerade recensioner visar endast ditt valda visningsnamn, betyg, text, tjänst och månad.</li>
           </ul>
           <p>När du använder kontaktformuläret samlar vi in namn, e-postadress, eventuellt telefonnummer och ditt meddelande.</p>
           <p>

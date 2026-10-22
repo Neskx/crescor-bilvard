@@ -94,9 +94,9 @@ run next to other Supabase projects. For local testing, create
 ```bash
 npm run typecheck
 npm run lint
-npm test            # 60 unit/component tests (validation, dates/DST, draft, e-mail templates, UI)
-npm run test:db     # 30 integration tests against local Postgres (RLS, rules, concurrency, retention)
-npm run test:e2e    # 20 Playwright tests: booking (desktop + mobile), slot race, admin, contact, subpages, axe a11y on every page
+npm test            # 71 unit/component tests (validation, dates/DST, draft, locations, e-mail templates, UI)
+npm run test:db     # 67 integration tests against local Postgres (RLS, rules, travel time, reviews, charity, concurrency)
+npm run test:e2e    # 25 Playwright tests: booking (desktop + mobile), slot race, admin, reviews, contact, subpages, axe a11y
 ```
 
 The DB and E2E suites need the local stack and the local admin above, and refuse
@@ -137,3 +137,7 @@ booking stays off until enabled in admin.
 | Marketing copy | `src/sections/*.tsx` |
 | Gallery | `src/config/site.ts` + `public/images/` |
 | Logo | replace `brand/logomain.png`, then `npm run logo` |
+
+E2E tests start their own Vite server on port 5179 pointed at the local stack
+(`playwright.config.ts`), so a `.env.local` that targets the hosted project is never used.
+Phase 2 features and deployment notes: [docs/PHASE2.md](docs/PHASE2.md).

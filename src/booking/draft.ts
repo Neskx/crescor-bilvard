@@ -9,15 +9,32 @@
 import type { LocationType } from '../types';
 import { validateAddress, validateCustomerDetails } from '../../supabase/functions/_shared/validation';
 
-export type StepId = 'service' | 'location' | 'time' | 'details' | 'summary';
+export type StepId = 'service' | 'location' | 'time' | 'details' | 'charity' | 'summary';
 
+/** Every step, in order. The charity step is only shown when the programme is active. */
 export const STEPS: { id: StepId; label: string }[] = [
   { id: 'service', label: 'Tjänst' },
   { id: 'location', label: 'Plats' },
   { id: 'time', label: 'Tid' },
   { id: 'details', label: 'Uppgifter' },
+  { id: 'charity', label: 'Ändamål' },
   { id: 'summary', label: 'Bekräfta' },
 ];
+
+/** Live configuration that affects which steps exist and what counts as complete. */
+export interface FlowContext {
+  /** Show the "Välj ändamål" step (programme enabled and at least one active cause). */
+  charityStep: boolean;
+  /** Supported postal-code prefixes. Empty = no restriction. */
+  pickupPrefixes: string[];
+  mobilePrefixes: string[];
+}
+
+export const DEFAULT_CONTEXT: FlowContext = { charityStep: false, pickupPrefixes: [], mobilePrefixes: [] };
+
+export function stepsFor(ctx: FlowContext) {
+  return ctx.charityStep ? STEPS : STEPS.filter((s) => s.id !== 'charity');
+}
 
 export interface AddressFields {
   service_address: string;
@@ -35,6 +52,9 @@ export interface DetailFields {
   customer_notes: string;
 }
 
+/** Charity choice: a charity id, 'none' (customer chose not to pick), or null (not decided yet). */
+export type CharityChoice = string | 'none' | null;
+
 export interface Draft {
   version: 1;
   step: StepId;
@@ -46,6 +66,7 @@ export interface Draft {
   slot: { start: string; end: string } | null;
   weekStart: string | null;
   details: DetailFields;
+  charity: CharityChoice;
   privacyAccepted: boolean;
   idempotencyKey: string;
   savedAt: number;
@@ -59,6 +80,7 @@ export type Action =
   | { type: 'selectSlot'; slot: { start: string; end: string } | null }
   | { type: 'setWeek'; weekStart: string }
   | { type: 'setDetail'; field: keyof DetailFields; value: string }
+  | { type: 'setCharity'; value: CharityChoice }
   | { type: 'setPrivacy'; value: boolean }
   | { type: 'goTo'; step: StepId }
   | { type: 'reset' }
@@ -95,6 +117,7 @@ export function emptyDraft(): Draft {
       registration_number: '',
       customer_notes: '',
     },
+    charity: null,
     privacyAccepted: false,
     idempotencyKey: uuid(),
     savedAt: Date.now(),
@@ -114,7 +137,8 @@ export function reducer(state: Draft, action: Action): Draft {
           : [...state.addonIds, action.id],
       });
     case 'setLocation':
-      return next({ locationType: action.value });
+      // Travel time differs per location, so a chosen time no longer applies.
+      return state.locationType === action.value ? state : next({ locationType: action.value, slot: null });
     case 'setAddress':
       return next({ address: { ...state.address, [action.field]: action.value } });
     case 'selectSlot':
@@ -123,6 +147,8 @@ export function reducer(state: Draft, action: Action): Draft {
       return next({ weekStart: action.weekStart });
     case 'setDetail':
       return next({ details: { ...state.details, [action.field]: action.value } });
+    case 'setCharity':
+      return next({ charity: action.value });
     case 'setPrivacy':
       return next({ privacyAccepted: action.value });
     case 'goTo':
@@ -136,34 +162,62 @@ export function reducer(state: Draft, action: Action): Draft {
 
 // ---- Step completeness -------------------------------------------------------
 
-export function addressErrors(d: Draft) {
-  return d.locationType === 'customer_address' ? validateAddress(d.address) : {};
+export const needsAddress = (t: LocationType | null) => t === 'pickup' || t === 'customer_address';
+
+/** True when no zones are configured or the postal code starts with one of them. */
+export function postalSupported(postal: string, prefixes: string[]): boolean {
+  if (!prefixes.length) return true;
+  const digits = postal.replace(/\s/g, '');
+  return prefixes.some((p) => digits.startsWith(p));
+}
+
+export function addressErrors(d: Draft, ctx: FlowContext = DEFAULT_CONTEXT) {
+  if (!needsAddress(d.locationType)) return {};
+  const errors = validateAddress(d.address);
+  const prefixes = d.locationType === 'pickup' ? ctx.pickupPrefixes : ctx.mobilePrefixes;
+  if (!errors.service_postal_code && !postalSupported(d.address.service_postal_code, prefixes)) {
+    errors.service_postal_code =
+      d.locationType === 'pickup'
+        ? 'Vi hämtar tyvärr inte bilar i det här postnummerområdet. Välj ett annat alternativ eller kontakta oss.'
+        : 'Vi erbjuder tyvärr inte tvätt på plats i det här postnummerområdet. Välj ett annat alternativ eller kontakta oss.';
+  }
+  return errors;
 }
 
 export function detailErrors(d: Draft) {
   return validateCustomerDetails(d.details);
 }
 
-export function isStepComplete(d: Draft, step: StepId): boolean {
+export function isStepComplete(d: Draft, step: StepId, ctx: FlowContext = DEFAULT_CONTEXT): boolean {
   switch (step) {
     case 'service':
       return Boolean(d.serviceId);
     case 'location':
-      return Boolean(d.locationType) && Object.keys(addressErrors(d)).length === 0;
+      return Boolean(d.locationType) && Object.keys(addressErrors(d, ctx)).length === 0;
     case 'time':
       return Boolean(d.slot);
     case 'details':
       return Object.keys(detailErrors(d)).length === 0;
+    case 'charity':
+      return !ctx.charityStep || d.charity !== null;
     case 'summary':
       return false;
   }
 }
 
-/** Furthest step the customer may navigate to, given what is already filled in. */
-export function maxReachableIndex(d: Draft): number {
+/** Furthest step (index into stepsFor(ctx)) the customer may navigate to. */
+export function maxReachableIndex(d: Draft, ctx: FlowContext = DEFAULT_CONTEXT): number {
+  const steps = stepsFor(ctx);
   let i = 0;
-  while (i < STEPS.length - 1 && isStepComplete(d, STEPS[i].id)) i++;
+  while (i < steps.length - 1 && isStepComplete(d, steps[i].id, ctx)) i++;
   return i;
+}
+
+/** The step after / before `step` in the current flow. */
+export function nextStep(step: StepId, ctx: FlowContext, delta: 1 | -1 = 1): StepId {
+  const steps = stepsFor(ctx);
+  const i = steps.findIndex((s) => s.id === step);
+  return steps[Math.min(steps.length - 1, Math.max(0, i + delta))].id;
 }
 
 // ---- Persistence ---------------------------------------------------------------
@@ -189,6 +243,7 @@ export function loadDraft(): Draft {
       address: { ...base.address, ...(parsed.address ?? {}) },
       details: { ...base.details, ...(parsed.details ?? {}) },
       addonIds: Array.isArray(parsed.addonIds) ? parsed.addonIds.filter((x) => typeof x === 'string') : [],
+      charity: typeof parsed.charity === 'string' ? parsed.charity : null,
     } as Draft;
   } catch {
     return emptyDraft();

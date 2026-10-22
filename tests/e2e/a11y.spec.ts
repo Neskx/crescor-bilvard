@@ -18,7 +18,7 @@ test('homepage has no WCAG A/AA violations', async ({ page }) => {
 
 test('booking calendar and details steps have no WCAG A/AA violations', async ({ page }) => {
   await page.goto('/#boka');
-  await chooseService(page, 'Biltvätt');
+  await chooseService(page, 'Enkel Tvätt');
   await chooseWorkshop(page);
   await firstFreeSlot(page, 1);
   await audit(page);
@@ -28,7 +28,7 @@ test('booking calendar and details steps have no WCAG A/AA violations', async ({
   await audit(page);
 });
 
-for (const path of ['/tjanster', '/tjanster/biltvatt', '/boka', '/om-oss', '/kontakt']) {
+for (const path of ['/tjanster', '/tjanster/mini-rekond', '/boka', '/om-oss', '/kontakt', '/recension?t=ogiltig']) {
   test(`${path} has no WCAG A/AA violations`, async ({ page }) => {
     await page.goto(path);
     await audit(page);

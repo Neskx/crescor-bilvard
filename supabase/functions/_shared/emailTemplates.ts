@@ -24,7 +24,11 @@ export interface TemplateAppointment {
   customer_phone: string;
   vehicle_information: string | null;
   registration_number: string | null;
-  location_type: 'workshop' | 'customer_address';
+  location_type: 'workshop' | 'pickup' | 'customer_address';
+  /** Pickup / on-site fee snapshot. NULL or absent = no fee. */
+  location_fee?: number | null;
+  /** Name of the cause the customer chose to support (a preference, never an amount). */
+  charity_name?: string | null;
   service_address: string | null;
   service_postal_code: string | null;
   service_city: string | null;
@@ -75,9 +79,11 @@ function formatAmount(value: number): string {
   return `${new Intl.NumberFormat('sv-SE', { maximumFractionDigits: 0 }).format(Number(value))} kr`;
 }
 
-/** Total price including add-ons, or null when there is nothing to show. */
-export function totalPriceText(a: Pick<TemplateAppointment, 'price_snapshot' | 'price_type_snapshot' | 'addons_total'>): string | null {
-  const extras = Number(a.addons_total ?? 0);
+/** Total price including add-ons and any location fee, or null when there is nothing to show. */
+export function totalPriceText(
+  a: Pick<TemplateAppointment, 'price_snapshot' | 'price_type_snapshot' | 'addons_total' | 'location_fee'>,
+): string | null {
+  const extras = Number(a.addons_total ?? 0) + Number(a.location_fee ?? 0);
   if (a.price_type_snapshot === 'on_request' || a.price_snapshot === null) {
     return extras > 0 ? `Tjänsten enligt offert + tillägg ${formatAmount(extras)}` : null;
   }
@@ -88,7 +94,8 @@ function locationText(a: TemplateAppointment, c: TemplateCompany): string {
   if (a.location_type === 'workshop') {
     return c.company_address ? `Hos ${c.company_name}, ${c.company_address}` : `Hos ${c.company_name}`;
   }
-  return [a.service_address, [a.service_postal_code, a.service_city].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+  const address = [a.service_address, [a.service_postal_code, a.service_city].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+  return a.location_type === 'pickup' ? `Vi hämtar bilen: ${address}` : address;
 }
 
 type Row = [label: string, value: string | null | undefined];
@@ -104,8 +111,15 @@ function detailRows(a: TemplateAppointment, c: TemplateCompany, opts: { includeC
   if (a.addons?.length) {
     rows.push(['Tillägg', a.addons.map((x) => `${x.name} (+${formatAmount(x.price)})`).join('\n')]);
   }
+  if (a.location_fee !== null && a.location_fee !== undefined && Number(a.location_fee) > 0) {
+    rows.push([a.location_type === 'pickup' ? 'Hämtningsavgift' : 'Framkörningsavgift', `+${formatAmount(Number(a.location_fee))}`]);
+  }
   rows.push(['Pris', totalPriceText(a)]);
-  if (a.location_type === 'customer_address') rows.push(['Instruktioner', a.address_instructions]);
+  if (a.location_type !== 'workshop') rows.push(['Instruktioner', a.address_instructions]);
+  if (a.location_type === 'pickup') {
+    rows.push(['Hämtning och återlämning', 'Vi kontaktar dig för att bekräfta tider för hämtning och återlämning av bilen.']);
+  }
+  if (a.charity_name) rows.push(['Valt ändamål', a.charity_name]);
   rows.push(['Bil', a.vehicle_information], ['Registreringsnummer', a.registration_number]);
   if (opts.includeCustomer) {
     rows.push(['Kund', a.customer_name], ['E-post', a.customer_email], ['Telefon', a.customer_phone]);
@@ -255,5 +269,23 @@ export function adminContactEmail(
     subject: `Kontaktformulär: ${m.name}`,
     html: layout(c, heading, '', rows, footer),
     text: textVersion(heading, '', rows, footer, c),
+  };
+}
+
+/** Invitation to review a completed booking. `link` is the personal, single-use review URL. */
+export function reviewInviteEmail(a: TemplateAppointment, c: TemplateCompany, link: string): RenderedEmail {
+  const heading = 'Hur nöjd är du med besöket?';
+  const intro = `Hej ${a.customer_name}! Tack för att du anlitade ${c.company_name}. Vi blir glada om du vill berätta hur du upplevde besöket – det tar bara en minut.`;
+  const button = `<p style="margin:22px 0 4px;"><a href="${escapeHtml(link)}" style="display:inline-block;background:#e8e8e8;color:#080808;padding:12px 22px;text-decoration:none;font-weight:bold;letter-spacing:1px;font-size:13px;">LÄMNA EN RECENSION</a></p>`;
+  const rows: Row[] = [
+    ['Tjänst', a.service_name],
+    ['Datum', formatDate(a.start_time, c.timezone)],
+  ];
+  const footer =
+    'Länken är personlig och kan användas en gång. Recensioner granskas innan de publiceras. Vill du inte lämna någon recension behöver du inte göra något.';
+  return {
+    subject: `Hur var ditt besök hos ${c.company_name}?`,
+    html: layout(c, heading, `${escapeHtml(intro)}${button}`, rows, footer),
+    text: textVersion(heading, `${intro}\n\nLämna en recension: ${link}`, rows, footer, c),
   };
 }

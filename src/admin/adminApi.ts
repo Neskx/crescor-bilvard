@@ -13,6 +13,7 @@ import type {
   BusinessHour,
   ContactMessage,
   EmailStatus,
+  LocationType,
   NotificationLogEntry,
 } from '../types';
 
@@ -44,7 +45,17 @@ const ADMIN_MESSAGES: Record<string, string> = {
   anonymized: 'Bokningen är anonymiserad och kan inte ändras.',
   still_active: 'Kommande aktiva bokningar kan inte anonymiseras. Avboka först.',
   addon_unavailable: 'Ett valt tillägg finns inte längre. Ladda om sidan och försök igen.',
-  in_use: 'Tjänsten har bokningar kopplade till sig och kan inte tas bort. Inaktivera den istället.',
+  in_use: 'Posten används av befintliga bokningar eller gåvor och kan inte tas bort. Inaktivera eller dölj den istället.',
+  '23505': 'Det finns redan en post med samma namn eller period.',
+  '23514': 'Ett eller flera värden är ogiltiga. Kontrollera format, längd och webbadresser (https://…).',
+  postal_code_unsupported: 'Postnumret ligger utanför de områden som är inställda.',
+  charity_unavailable: 'Ändamålet är inaktivt eller finns inte.',
+  not_completed: 'Recensionslänkar kan bara skapas för utförda bokningar.',
+  already_reviewed: 'Kunden har redan lämnat en recension för bokningen.',
+  site_url_missing: 'SITE_URL är inte inställd för Edge Functions – använd "Kopiera länk" istället.',
+  logo_type: 'Logotypen måste vara PNG, JPG eller WebP.',
+  logo_size: 'Logotypen får vara högst 2 MB.',
+  logo_upload: 'Logotypen kunde inte laddas upp. Kontrollera att lagringen (Storage) är aktiverad, eller välj en medföljande logotyp.',
   invalid_input: 'Kontrollera de ifyllda uppgifterna.',
   not_configured: 'Supabase är inte konfigurerat.',
   network: 'Kunde inte nå servern. Kontrollera anslutningen.',
@@ -82,6 +93,7 @@ export async function checkIsAdmin(): Promise<boolean> {
 export interface AppointmentQuery {
   scope: 'upcoming' | 'past' | 'all';
   status?: AppointmentStatus | '';
+  location?: LocationType | '';
   from?: string; // ISO
   to?: string; // ISO
   search?: string;
@@ -100,6 +112,7 @@ export async function listAppointments(q: AppointmentQuery): Promise<{ rows: App
   else query = query.order('start_time', { ascending: false });
 
   if (q.status) query = query.eq('status', q.status);
+  if (q.location) query = query.eq('location_type', q.location);
   if (q.from) query = query.gte('start_time', q.from);
   if (q.to) query = query.lt('start_time', q.to);
   if (q.search) {

@@ -15,7 +15,17 @@ interface PublicConfigState {
   reload: () => Promise<PublicConfig | null>;
 }
 
-const FALLBACK: PublicConfig = { settings: FALLBACK_SETTINGS, services: FALLBACK_SERVICES, addons: FALLBACK_ADDONS, business_hours: [] };
+// Without the database nothing unverifiable is shown: no partners, causes, donations or reviews.
+const FALLBACK: PublicConfig = {
+  settings: FALLBACK_SETTINGS,
+  services: FALLBACK_SERVICES,
+  addons: FALLBACK_ADDONS,
+  business_hours: [],
+  partners: [],
+  charities: [],
+  donations: [],
+  reviews: [],
+};
 
 const Ctx = createContext<PublicConfigState | null>(null);
 

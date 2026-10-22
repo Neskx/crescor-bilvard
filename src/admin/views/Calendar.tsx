@@ -20,6 +20,14 @@ import {
 import { cx } from '../../lib/format';
 import type { Appointment, BlockedPeriod } from '../../types';
 
+/**
+ * Whether a blocked period overlaps [from, to). Compared as instants: the database
+ * returns "…+00:00" while we build "….000Z", and as strings those order wrongly at
+ * the boundary (a block ending at midnight showed up on the previous day too).
+ */
+const overlaps = (b: BlockedPeriod, from: string, to: string) =>
+  Date.parse(b.start_time) < Date.parse(to) && Date.parse(b.end_time) > Date.parse(from);
+
 export function CalendarView({ onChanged }: { onChanged: () => void }) {
   const today = todayKey(DEFAULT_TZ);
   const [week, setWeek] = useState(startOfIsoWeek(today));
@@ -38,7 +46,7 @@ export function CalendarView({ onChanged }: { onChanged: () => void }) {
       const to = zonedTimeToUtc(addDays(week, 7), '00:00', DEFAULT_TZ);
       const [appts, blocks] = await Promise.all([appointmentsBetween(from, to), listBlocked()]);
       setItems(appts);
-      setBlocked(blocks.filter((b) => b.start_time < to && b.end_time > from));
+      setBlocked(blocks.filter((b) => overlaps(b, from, to)));
     } catch (e) {
       setError(adminMessage(e));
     } finally {
@@ -82,7 +90,7 @@ export function CalendarView({ onChanged }: { onChanged: () => void }) {
         {days.map((d) => {
           const p = dayParts(d);
           const dayItems = items.filter((a) => dateKeyInZone(a.start_time, DEFAULT_TZ) === d);
-          const dayBlocks = blocked.filter((b) => b.start_time < dayEnd(d) && b.end_time > dayStart(d));
+          const dayBlocks = blocked.filter((b) => overlaps(b, dayStart(d), dayEnd(d)));
           return (
             <section key={d} className={cx('min-h-[140px] border bg-ink-900 p-3', d === today ? 'border-white/40' : 'border-white/[0.07]')}>
               <h2 className="flex items-baseline gap-2 border-b border-white/[0.06] pb-2">

@@ -6,6 +6,9 @@ import { WhyUs } from '../sections/WhyUs';
 import { Gallery } from '../sections/Gallery';
 import { About } from '../sections/About';
 import { Contact } from '../sections/Contact';
+import { Charity } from '../sections/Charity';
+import { Partners } from '../sections/Partners';
+import { Reviews } from '../sections/Reviews';
 import { BookingSection } from '../booking/BookingSection';
 import { usePublicConfig } from '../hooks/usePublicConfig';
 import { usePageMeta } from '../hooks/usePageMeta';
@@ -36,6 +39,10 @@ function useBusinessStructuredData() {
         itemListElement: config.services.map((v) => ({
           '@type': 'Offer',
           itemOffered: { '@type': 'Service', name: v.name, description: v.description, url: `${SITE.url}/tjanster/${v.slug}` },
+          // Prices only when configured. No ratings are ever added to structured data.
+          ...(v.price !== null && v.price_type !== 'on_request'
+            ? { price: Number(v.price), priceCurrency: 'SEK', ...(v.price_type === 'from' ? { priceSpecification: { '@type': 'PriceSpecification', minPrice: Number(v.price), priceCurrency: 'SEK' } } : {}) }
+            : {}),
         })),
       };
     }
@@ -53,9 +60,9 @@ function useBusinessStructuredData() {
 export function HomePage() {
   useBusinessStructuredData();
   usePageMeta({
-    title: 'Crescor Bilvård – Professionell biltvätt och bilvård',
+    title: 'Crescor Bilvård – Biltvätt och rekond: Enkel Tvätt, Mini Rekond och Premium Rekond',
     description:
-      'Crescor Bilvård erbjuder professionell biltvätt med valbara tillägg som keramiskt sprayvax, fläckborttagning, luktbehandling och vattenavvisande vindruta. Boka din tid enkelt online.',
+      'Professionell bilvård i tre paket – Enkel Tvätt, Mini Rekond och Premium Rekond. Lämna bilen hos oss, låt oss hämta den eller boka tvätt på plats. Boka din tid enkelt online.',
     path: '/',
   });
 
@@ -67,6 +74,9 @@ export function HomePage() {
       <Gallery />
       <BookingSection />
       <About />
+      <Charity />
+      <Partners />
+      <Reviews />
       <Contact />
     </SiteLayout>
   );

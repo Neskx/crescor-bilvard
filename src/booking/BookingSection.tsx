@@ -10,7 +10,7 @@ export function BookingSection({ showHeading = true }: { showHeading?: boolean }
   const ref = useReveal<HTMLElement>();
   const { status, config, error, reload } = usePublicConfig();
   const s = config.settings;
-  const hasLocation = s.workshop_available || s.mobile_available;
+  const hasLocation = s.workshop_available || Boolean(s.pickup_available) || s.mobile_available;
 
   const contactFallback = (
     <p className="mt-3 text-sm text-silver-300">

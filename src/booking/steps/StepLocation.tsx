@@ -1,13 +1,21 @@
 import { useState, type InputHTMLAttributes, type RefObject } from 'react';
-import { MapPin, Truck } from 'lucide-react';
+import { Info, MapPin, Truck, Warehouse } from 'lucide-react';
 import { OptionCard, StepFooter, StepTitle } from './common';
 import { Field, fieldAria } from '../../components/ui';
 import { LIMITS, type FieldErrors } from '../../../supabase/functions/_shared/validation';
-import type { AddressFields } from '../draft';
-import type { LocationType, PublicSettings } from '../../types';
+import { needsAddress, type AddressFields } from '../draft';
+import { formatAmount } from '../../lib/format';
+import { DEFAULT_PICKUP_INFO, LOCATION_LABEL, locationAvailable, locationFee } from '../locations';
+import type { LocationType, PublicSettings, Service } from '../../types';
+
+function feeMeta(fee: number | null) {
+  if (fee === null) return null;
+  return <span className="font-semibold text-white">{fee > 0 ? `+${formatAmount(fee)}` : 'Ingen extra avgift'}</span>;
+}
 
 export function StepLocation({
   settings,
+  service,
   locationType,
   address,
   errors,
@@ -18,6 +26,7 @@ export function StepLocation({
   titleRef,
 }: {
   settings: PublicSettings;
+  service: Service | null;
   locationType: LocationType | null;
   address: AddressFields;
   errors: FieldErrors;
@@ -33,7 +42,7 @@ export function StepLocation({
 
   const next = () => {
     if (!locationType) return;
-    if (locationType === 'customer_address' && Object.keys(errors).length) {
+    if (needsAddress(locationType) && Object.keys(errors).length) {
       setShowErrors(true);
       const first = (['service_address', 'service_postal_code', 'service_city', 'address_instructions'] as const).find((f) => errors[f]);
       if (first) document.getElementById(`bk-${first}`)?.focus();
@@ -53,50 +62,87 @@ export function StepLocation({
     />
   );
 
+  const options: { type: LocationType; icon: typeof MapPin; text: string; meta?: string | null }[] = [
+    {
+      type: 'workshop',
+      icon: Warehouse,
+      text: 'Du lämnar bilen hos oss och hämtar den när arbetet är klart.',
+      meta: settings.company_address,
+    },
+    {
+      type: 'pickup',
+      icon: Truck,
+      text: 'Vi hämtar bilen hos dig och lämnar tillbaka den när den är klar.',
+      meta: settings.pickup_area_text,
+    },
+    {
+      type: 'customer_address',
+      icon: MapPin,
+      text: 'Vi tvättar bilen där den står – hemma eller på jobbet.',
+      meta: settings.service_area_text,
+    },
+  ];
+  const visible = options.filter((o) => locationAvailable(settings, service, o.type).enabled);
+  const pickupInfo = settings.pickup_info_text?.trim() || DEFAULT_PICKUP_INFO;
+
   return (
     <div>
-      <StepTitle ref={titleRef} sub="Välj var arbetet ska utföras.">
-        Var ska vi utföra arbetet?
+      <StepTitle ref={titleRef} sub="Välj hur du vill att vi tar hand om bilen.">
+        Välj plats
       </StepTitle>
 
-      <div role="radiogroup" aria-label="Plats" className="grid gap-3 md:grid-cols-2">
-        {settings.workshop_available && (
-          <OptionCard
-            selected={locationType === 'workshop'}
-            onSelect={() => onLocation('workshop')}
-            title={`Hos ${settings.company_name}`}
-            meta={
-              <span className="inline-flex items-center gap-1.5">
-                <MapPin className="h-3.5 w-3.5" aria-hidden /> {settings.company_address}
-              </span>
-            }
-          >
-            Du lämnar bilen hos oss och hämtar den när arbetet är klart.
-          </OptionCard>
-        )}
-        {settings.mobile_available && (
-          <OptionCard
-            selected={locationType === 'customer_address'}
-            onSelect={() => onLocation('customer_address')}
-            title="På din adress"
-            meta={
-              settings.service_area_text ? (
-                <span className="inline-flex items-center gap-1.5">
-                  <Truck className="h-3.5 w-3.5" aria-hidden /> {settings.service_area_text}
-                </span>
-              ) : undefined
-            }
-          >
-            Vi kommer till dig – hemma eller på jobbet.
-          </OptionCard>
-        )}
+      <div role="radiogroup" aria-label="Plats" className="grid gap-3 md:grid-cols-3">
+        {visible.map((o) => {
+          const { allowed } = locationAvailable(settings, service, o.type);
+          const Icon = o.icon;
+          const fee = feeMeta(locationFee(settings, o.type));
+          return (
+            <OptionCard
+              key={o.type}
+              selected={locationType === o.type}
+              onSelect={() => onLocation(o.type)}
+              disabled={!allowed}
+              title={LOCATION_LABEL[o.type]}
+              icon={<Icon className="h-[18px] w-[18px]" strokeWidth={1.5} />}
+              meta={
+                allowed && (o.meta || fee) ? (
+                  <>
+                    {o.meta && <span>{o.meta}</span>}
+                    {fee}
+                  </>
+                ) : undefined
+              }
+            >
+              {allowed ? o.text : `Erbjuds inte för ${service?.name ?? 'vald tjänst'}.`}
+            </OptionCard>
+          );
+        })}
       </div>
 
-      {locationType === 'customer_address' && (
+      {locationType === 'workshop' && (
+        <div className="mt-6 flex gap-3 border border-white/[0.08] bg-ink-900 p-5 text-sm leading-relaxed text-silver-300" aria-live="polite">
+          <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-silver-400" aria-hidden />
+          <div>
+            <p className="font-semibold text-white">
+              {settings.company_name}
+              {settings.company_address ? `, ${settings.company_address}` : ''}
+            </p>
+            {settings.workshop_instructions && <p className="mt-1 whitespace-pre-line">{settings.workshop_instructions}</p>}
+          </div>
+        </div>
+      )}
+
+      {needsAddress(locationType) && (
         <fieldset className="mt-8 grid gap-5 border-t border-white/[0.07] pt-8 sm:grid-cols-6">
-          <legend className="sr-only">Adress där arbetet ska utföras</legend>
+          <legend className="sr-only">{locationType === 'pickup' ? 'Adress där vi hämtar bilen' : 'Adress där arbetet ska utföras'}</legend>
+          {locationType === 'pickup' && (
+            <div className="flex gap-3 border border-white/[0.08] bg-ink-900 p-4 text-sm leading-relaxed text-silver-300 sm:col-span-6">
+              <Info className="mt-0.5 h-4 w-4 shrink-0 text-silver-400" aria-hidden />
+              <p className="whitespace-pre-line">{pickupInfo}</p>
+            </div>
+          )}
           <div className="sm:col-span-6">
-            <Field id="bk-service_address" label="Gatuadress" error={err('service_address')}>
+            <Field id="bk-service_address" label={locationType === 'pickup' ? 'Hämtadress' : 'Gatuadress'} error={err('service_address')}>
               {input('service_address', { autoComplete: 'street-address', maxLength: LIMITS.address })}
             </Field>
           </div>
@@ -113,10 +159,14 @@ export function StepLocation({
           <div className="sm:col-span-6">
             <Field
               id="bk-address_instructions"
-              label="Instruktioner"
+              label={locationType === 'pickup' ? 'Instruktioner för hämtning' : 'Parkering och tillgång'}
               optional
               error={err('address_instructions')}
-              hint="Till exempel portkod, var bilen står parkerad eller tillgång till el och vatten."
+              hint={
+                locationType === 'pickup'
+                  ? 'Till exempel var bilen står, var nyckeln finns eller portkod.'
+                  : 'Till exempel var bilen står parkerad, portkod eller tillgång till el och vatten.'
+              }
             >
               <textarea
                 {...fieldAria('bk-address_instructions', err('address_instructions'), 'hint')}

@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { MapPin, PlusCircle, Search } from 'lucide-react';
+import { MapPin, Truck, PlusCircle, Search } from 'lucide-react';
 import { adminMessage, listAppointments, type AppointmentQuery } from '../adminApi';
 import { EmptyState, PageHeader, StatusBadge } from '../components';
 import { BookingDrawer } from './BookingDrawer';
 import { Alert, Spinner } from '../../components/ui';
 import { DEFAULT_TZ, addDays, formatDateLong, formatTime, zonedTimeToUtc } from '../../lib/datetime';
 import { cx } from '../../lib/format';
-import type { Appointment, AppointmentStatus } from '../../types';
+import type { Appointment, AppointmentStatus, LocationType } from '../../types';
 
 const PAGE_SIZE = 50;
 
@@ -18,6 +18,7 @@ export function BookingsView({ onChanged }: { onChanged: () => void }) {
   const [to, setTo] = useState('');
   const [search, setSearch] = useState('');
   const [debounced, setDebounced] = useState('');
+  const [location, setLocation] = useState<LocationType | ''>('');
   const [page, setPage] = useState(0);
   const [rows, setRows] = useState<Appointment[]>([]);
   const [total, setTotal] = useState(0);
@@ -30,7 +31,7 @@ export function BookingsView({ onChanged }: { onChanged: () => void }) {
     return () => clearTimeout(t);
   }, [search]);
 
-  useEffect(() => setPage(0), [scope, status, from, to, debounced]);
+  useEffect(() => setPage(0), [scope, status, location, from, to, debounced]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -39,6 +40,7 @@ export function BookingsView({ onChanged }: { onChanged: () => void }) {
       const res = await listAppointments({
         scope,
         status,
+        location,
         from: from ? zonedTimeToUtc(from, '00:00', DEFAULT_TZ) : undefined,
         to: to ? zonedTimeToUtc(addDays(to, 1), '00:00', DEFAULT_TZ) : undefined,
         search: debounced,
@@ -52,7 +54,7 @@ export function BookingsView({ onChanged }: { onChanged: () => void }) {
     } finally {
       setLoading(false);
     }
-  }, [scope, status, from, to, debounced, page]);
+  }, [scope, status, location, from, to, debounced, page]);
 
   useEffect(() => {
     void load();
@@ -73,7 +75,7 @@ export function BookingsView({ onChanged }: { onChanged: () => void }) {
         title="Bokningar"
         sub={loading ? 'Laddar…' : `${total} ${total === 1 ? 'bokning' : 'bokningar'}`}
         actions={
-          <Link to="../ny-bokning" className="btn btn-metal btn-sm">
+          <Link to="/admin/ny-bokning" className="btn btn-metal btn-sm">
             <PlusCircle className="h-4 w-4" aria-hidden /> Ny bokning
           </Link>
         }
@@ -99,7 +101,7 @@ export function BookingsView({ onChanged }: { onChanged: () => void }) {
         ))}
       </div>
 
-      <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_200px_160px_160px]">
+      <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_190px_170px_150px_150px]">
         <label className="relative">
           <span className="sr-only">Sök</span>
           <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-silver-500" aria-hidden />
@@ -118,6 +120,12 @@ export function BookingsView({ onChanged }: { onChanged: () => void }) {
           <option value="completed">Utförda</option>
           <option value="cancelled">Avbokade</option>
         </select>
+        <select aria-label="Plats" className="field-input" value={location} onChange={(e) => setLocation(e.target.value as LocationType | '')}>
+          <option value="">Alla platser</option>
+          <option value="workshop">Lämna bilen</option>
+          <option value="pickup">Vi hämtar bilen</option>
+          <option value="customer_address">Tvätt på plats</option>
+        </select>
         <input type="date" aria-label="Från datum" className="field-input" value={from} onChange={(e) => setFrom(e.target.value)} />
         <input type="date" aria-label="Till datum" className="field-input" value={to} onChange={(e) => setTo(e.target.value)} />
       </div>
@@ -134,7 +142,7 @@ export function BookingsView({ onChanged }: { onChanged: () => void }) {
           </div>
         )}
         {!loading && !error && rows.length === 0 && (
-          <EmptyState title="Inga bokningar">{debounced || status || from || to ? 'Inga bokningar matchar filtret.' : 'Nya bokningar visas här.'}</EmptyState>
+          <EmptyState title="Inga bokningar">{debounced || status || location || from || to ? 'Inga bokningar matchar filtret.' : 'Nya bokningar visas här.'}</EmptyState>
         )}
 
         <div className={cx('space-y-8', loading && 'opacity-60')}>
@@ -157,7 +165,12 @@ export function BookingsView({ onChanged }: { onChanged: () => void }) {
                           {r.service_name}
                           {r.location_type === 'customer_address' && (
                             <span className="inline-flex items-center gap-1">
-                              <MapPin className="h-3.5 w-3.5" aria-hidden /> {r.service_city ?? 'Kundens adress'}
+                              <MapPin className="h-3.5 w-3.5" aria-hidden /> På plats · {r.service_city ?? 'Kundens adress'}
+                            </span>
+                          )}
+                          {r.location_type === 'pickup' && (
+                            <span className="inline-flex items-center gap-1">
+                              <Truck className="h-3.5 w-3.5" aria-hidden /> Hämtning · {r.service_city ?? 'Kundens adress'}
                             </span>
                           )}
                           {r.registration_number && <span>{r.registration_number}</span>}

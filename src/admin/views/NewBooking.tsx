@@ -57,7 +57,7 @@ export function NewBookingView({ onChanged }: { onChanged: () => void }) {
     if (busy) return;
     setError(null);
     const errs: FieldErrors = { ...validateCustomerDetails(f) };
-    if (f.location_type === 'customer_address') Object.assign(errs, validateAddress(f));
+    if (f.location_type !== 'workshop') Object.assign(errs, validateAddress(f));
     if (!f.service_id) errs.service_id = 'Välj tjänst.';
     if (!f.date) errs.date = 'Välj datum.';
     if (!f.time) errs.time = 'Välj tid.';
@@ -82,7 +82,7 @@ export function NewBookingView({ onChanged }: { onChanged: () => void }) {
           customer_notes: f.customer_notes,
           admin_notes: f.admin_notes,
           status: f.status,
-          ...(f.location_type === 'customer_address'
+          ...(f.location_type !== 'workshop'
             ? { service_address: f.service_address, service_postal_code: f.service_postal_code, service_city: f.service_city, address_instructions: f.address_instructions }
             : {}),
         },
@@ -174,11 +174,12 @@ export function NewBookingView({ onChanged }: { onChanged: () => void }) {
 
         <fieldset className="grid gap-5 sm:grid-cols-6">
           <legend className="eyebrow mb-4">Plats</legend>
-          <div className="flex gap-6 sm:col-span-6">
+          <div className="flex flex-wrap gap-6 sm:col-span-6">
             {(
               [
-                ['workshop', 'Hos oss'],
-                ['customer_address', 'Kundens adress'],
+                ['workshop', 'Lämna bilen'],
+                ['pickup', 'Vi hämtar bilen'],
+                ['customer_address', 'Tvätt på plats'],
               ] as const
             ).map(([v, l]) => (
               <label key={v} className="flex items-center gap-2 text-sm">
@@ -187,7 +188,7 @@ export function NewBookingView({ onChanged }: { onChanged: () => void }) {
               </label>
             ))}
           </div>
-          {f.location_type === 'customer_address' && (
+          {f.location_type !== 'workshop' && (
             <>
               <div className="sm:col-span-6">{input('service_address', 'Gatuadress')}</div>
               <div className="sm:col-span-2">{input('service_postal_code', 'Postnummer', { inputMode: 'numeric' })}</div>

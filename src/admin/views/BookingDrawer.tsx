@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { CalendarClock, Check, CheckCheck, Mail, ShieldOff, X, XCircle } from 'lucide-react';
+import { CalendarClock, Check, CheckCheck, Copy, Mail, MapPin, MessageSquareQuote, ShieldOff, X, XCircle } from 'lucide-react';
 import {
+  AdminError,
   adminMessage,
   anonymizeAppointment,
   getAppointment,
@@ -10,11 +11,14 @@ import {
   setStatus,
   updateAdminNotes,
 } from '../adminApi';
+import { charityForAppointment, issueReviewLink, reviewStateFor, sendReviewInvite, updateAppointmentLocation } from '../adminApiPhase2';
 import { StatusBadge, useConfirm, useToast } from '../components';
+import { LOCATION_LABEL } from '../../booking/locations';
 import { Alert, Spinner } from '../../components/ui';
 import { DEFAULT_TZ, dateKeyInZone, formatDateLong, formatDateTimeShort, formatTime, zonedTimeToUtc } from '../../lib/datetime';
 import { formatAmount, formatTotal, telHref } from '../../lib/format';
-import type { Appointment, EmailStatus, NotificationLogEntry } from '../../types';
+import { validateAddress } from '../../../supabase/functions/_shared/validation';
+import type { AdminReview, Appointment, EmailStatus, LocationType, NotificationLogEntry } from '../../types';
 
 const KIND_LABEL: Record<string, string> = {
   booking_customer: 'Bokningsbekräftelse till kund',
@@ -22,7 +26,12 @@ const KIND_LABEL: Record<string, string> = {
   confirmed: 'Bekräftelse till kund',
   cancelled: 'Avbokning till kund',
   rescheduled: 'Ny tid till kund',
+  review_invite: 'Recensionsinbjudan till kund',
 };
+
+const REVIEW_STATUS: Record<AdminReview['status'], string> = { pending: 'väntar på granskning', approved: 'publicerad', rejected: 'avvisad', hidden: 'dold' };
+
+type LocationForm = { location_type: LocationType; service_address: string; service_postal_code: string; service_city: string; address_instructions: string };
 const EMAIL_LABEL: Record<string, string> = { sent: 'Skickat', failed: 'Misslyckades', not_configured: 'E-post ej konfigurerad' };
 
 function emailToast(status: EmailStatus | 'error'): string {
@@ -45,13 +54,33 @@ export function BookingDrawer({ id, onClose, onChanged }: { id: string | null; o
   const [newDate, setNewDate] = useState('');
   const [newTime, setNewTime] = useState('');
   const [override, setOverride] = useState(false);
+  const [charity, setCharity] = useState<string | null>(null);
+  const [review, setReview] = useState<Awaited<ReturnType<typeof reviewStateFor>> | null>(null);
+  const [reviewLink, setReviewLink] = useState<string | null>(null);
+  const [editingLocation, setEditingLocation] = useState(false);
+  const [loc, setLoc] = useState<LocationForm | null>(null);
   const tz = DEFAULT_TZ;
 
   const load = async (appointmentId: string) => {
     setLoadError(null);
     try {
-      const [row, entries] = await Promise.all([getAppointment(appointmentId), notificationLog(appointmentId)]);
+      const [row, entries, chosen, rv] = await Promise.all([
+        getAppointment(appointmentId),
+        notificationLog(appointmentId),
+        // Secondary details must never block the booking itself from showing.
+        charityForAppointment(appointmentId).catch(() => null),
+        reviewStateFor(appointmentId).catch(() => null),
+      ]);
       setA(row);
+      setCharity(chosen);
+      setReview(rv);
+      setLoc({
+        location_type: row.location_type,
+        service_address: row.service_address ?? '',
+        service_postal_code: row.service_postal_code ?? '',
+        service_city: row.service_city ?? '',
+        address_instructions: row.address_instructions ?? '',
+      });
       setNotes(row.admin_notes ?? '');
       setLog(entries);
       setNewDate(dateKeyInZone(row.start_time, tz));
@@ -67,6 +96,8 @@ export function BookingDrawer({ id, onClose, onChanged }: { id: string | null; o
     if (id) {
       setA(null);
       setMoving(false);
+      setEditingLocation(false);
+      setReviewLink(null);
       setOverride(false);
       void load(id);
       if (!d.open) d.showModal();
@@ -129,6 +160,40 @@ export function BookingDrawer({ id, onClose, onChanged }: { id: string | null; o
         const mail = await notifyCustomer(a.id, 'rescheduled', res.previous_start_time);
         toast(mail === 'sent' ? 'success' : 'info', `Bokningen är flyttad. ${emailToast(mail)}`);
       } else toast('success', 'Bokningen är flyttad.');
+    });
+
+  const saveLocation = () =>
+    run(async () => {
+      if (!a || !loc) return;
+      if (loc.location_type !== 'workshop') {
+        const first = Object.values(validateAddress(loc))[0];
+        if (first) throw new AdminError('invalid_input', first);
+      }
+      await updateAppointmentLocation(a.id, loc);
+      setEditingLocation(false);
+      toast('success', 'Platsen är uppdaterad. Kontakta kunden om ändringen.');
+    });
+
+  const inviteReview = () =>
+    run(async () => {
+      if (!a) return;
+      const res = await sendReviewInvite(a.id);
+      setReviewLink(res.link);
+      if (res.email === 'sent') toast('success', 'Recensionsinbjudan är skickad.');
+      else toast('info', `${emailToast(res.email)} Kopiera länken nedan och skicka den på annat sätt.`);
+    });
+
+  const copyReviewLink = () =>
+    run(async () => {
+      if (!a) return;
+      const link = await issueReviewLink(a.id);
+      setReviewLink(link);
+      try {
+        await navigator.clipboard.writeText(link);
+        toast('success', 'En ny personlig länk är kopierad. Tidigare länkar slutar gälla.');
+      } catch {
+        toast('info', 'Länken visas nedan – kopiera den manuellt.');
+      }
     });
 
   const saveNotes = () =>
@@ -200,11 +265,24 @@ export function BookingDrawer({ id, onClose, onChanged }: { id: string | null; o
                 <dd>{anonymized ? '–' : <a className="underline" href={telHref(a.customer_phone)}>{a.customer_phone}</a>}</dd>
                 <dt className="text-silver-500">Plats</dt>
                 <dd>
-                  {a.location_type === 'workshop'
-                    ? 'Hos oss'
-                    : [a.service_address, [a.service_postal_code, a.service_city].filter(Boolean).join(' ')].filter(Boolean).join(', ') || '–'}
+                  <span className="block font-semibold">{LOCATION_LABEL[a.location_type]}</span>
+                  {a.location_type !== 'workshop' &&
+                    ([a.service_address, [a.service_postal_code, a.service_city].filter(Boolean).join(' ')].filter(Boolean).join(', ') || '–')}
                   {a.address_instructions && <span className="mt-1 block text-silver-400 whitespace-pre-line">{a.address_instructions}</span>}
+                  {a.travel_minutes > 0 && <span className="mt-1 block text-xs text-silver-500">{a.travel_minutes} min restid reserverad före och efter</span>}
                 </dd>
+                {a.location_fee !== null && Number(a.location_fee) > 0 && (
+                  <>
+                    <dt className="text-silver-500">{a.location_type === 'pickup' ? 'Hämtningsavgift' : 'Framkörning'}</dt>
+                    <dd>+{formatAmount(Number(a.location_fee))}</dd>
+                  </>
+                )}
+                {charity && (
+                  <>
+                    <dt className="text-silver-500">Valt ändamål</dt>
+                    <dd>{charity}</dd>
+                  </>
+                )}
                 {(a.vehicle_information || a.registration_number) && (
                   <>
                     <dt className="text-silver-500">Bil</dt>
@@ -227,7 +305,7 @@ export function BookingDrawer({ id, onClose, onChanged }: { id: string | null; o
                   </>
                 )}
                 <dt className="text-silver-500">Pris</dt>
-                <dd>{formatTotal(a.price_snapshot, a.price_type_snapshot, a.addons_total ?? 0) ?? 'Enligt offert'}</dd>
+                <dd>{formatTotal(a.price_snapshot, a.price_type_snapshot, Number(a.addons_total ?? 0) + Number(a.location_fee ?? 0)) ?? 'Enligt offert'}</dd>
                 {a.customer_notes && (
                   <>
                     <dt className="text-silver-500">Kundens meddelande</dt>
@@ -264,6 +342,11 @@ export function BookingDrawer({ id, onClose, onChanged }: { id: string | null; o
                         <XCircle className="h-4 w-4" aria-hidden /> Avboka
                       </button>
                     )}
+                    {active && (
+                      <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => setEditingLocation((v) => !v)}>
+                        <MapPin className="h-4 w-4" aria-hidden /> Ändra plats
+                      </button>
+                    )}
                     {a.status === 'cancelled' && new Date(a.start_time) > new Date() && (
                       <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void changeStatus('confirmed')}>
                         Återaktivera
@@ -285,6 +368,64 @@ export function BookingDrawer({ id, onClose, onChanged }: { id: string | null; o
                       <button type="button" className="btn btn-metal btn-sm mt-4" disabled={busy || !newDate || !newTime} onClick={() => void doReschedule()}>
                         {busy ? <Spinner className="h-4 w-4" /> : null} Spara ny tid
                       </button>
+                    </div>
+                  )}
+
+                  {editingLocation && loc && (
+                    <div className="mt-5 grid gap-3 border border-white/10 bg-ink-850 p-4">
+                      <p className="text-sm font-semibold">Plats</p>
+                      <div className="flex flex-wrap gap-4 text-sm">
+                        {(['workshop', 'pickup', 'customer_address'] as const).map((t) => (
+                          <label key={t} className="flex items-center gap-2">
+                            <input type="radio" name="drawer-loc" className="accent-silver-200" checked={loc.location_type === t} onChange={() => setLoc({ ...loc, location_type: t })} />
+                            {LOCATION_LABEL[t]}
+                          </label>
+                        ))}
+                      </div>
+                      {loc.location_type !== 'workshop' && (
+                        <>
+                          <input aria-label="Gatuadress" placeholder="Gatuadress" className="field-input" maxLength={120} value={loc.service_address} onChange={(e) => setLoc({ ...loc, service_address: e.target.value })} />
+                          <div className="grid grid-cols-[120px_1fr] gap-3">
+                            <input aria-label="Postnummer" placeholder="123 45" inputMode="numeric" className="field-input" maxLength={6} value={loc.service_postal_code} onChange={(e) => setLoc({ ...loc, service_postal_code: e.target.value })} />
+                            <input aria-label="Ort" placeholder="Ort" className="field-input" maxLength={60} value={loc.service_city} onChange={(e) => setLoc({ ...loc, service_city: e.target.value })} />
+                          </div>
+                          <textarea aria-label="Instruktioner" placeholder="Instruktioner" rows={2} className="field-input" maxLength={500} value={loc.address_instructions} onChange={(e) => setLoc({ ...loc, address_instructions: e.target.value })} />
+                        </>
+                      )}
+                      <p className="text-xs text-silver-500">Restiden räknas om. Ändringen stoppas om den krockar med en annan bokning. Inget mejl skickas automatiskt.</p>
+                      <button type="button" className="btn btn-metal btn-sm w-fit" disabled={busy} onClick={() => void saveLocation()}>
+                        Spara plats
+                      </button>
+                    </div>
+                  )}
+
+                  {a.status === 'completed' && (
+                    <div className="mt-8 border border-white/10 bg-ink-850 p-4">
+                      <p className="flex items-center gap-2 text-sm font-semibold">
+                        <MessageSquareQuote className="h-4 w-4" aria-hidden /> Recension
+                      </p>
+                      {review?.review ? (
+                        <p className="mt-2 text-sm text-silver-300">
+                          Kunden har lämnat en recension ({review.review.rating}/5) – {REVIEW_STATUS[review.review.status]}.
+                        </p>
+                      ) : (
+                        <>
+                          <p className="mt-2 text-sm text-silver-400">
+                            {review?.invitedAt
+                              ? `Inbjudan skapad ${formatDateTimeShort(review.invitedAt, tz)}. En ny inbjudan ersätter den tidigare länken.`
+                              : 'Be kunden om en recension. Länken är personlig och kan användas en gång.'}
+                          </p>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void inviteReview()}>
+                              <Mail className="h-4 w-4" aria-hidden /> Skicka inbjudan
+                            </button>
+                            <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void copyReviewLink()}>
+                              <Copy className="h-4 w-4" aria-hidden /> Kopiera länk
+                            </button>
+                          </div>
+                          {reviewLink && <input readOnly aria-label="Recensionslänk" className="field-input mt-3 text-xs" value={reviewLink} onFocus={(e) => e.target.select()} />}
+                        </>
+                      )}
                     </div>
                   )}
 

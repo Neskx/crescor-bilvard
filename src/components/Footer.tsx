@@ -6,6 +6,13 @@ import { telHref } from '../lib/format';
 
 const YEAR = new Date().getFullYear();
 
+/** Homepage sections that are not in the (already full) main navigation. */
+const SECONDARY_LINKS = [
+  { to: '/#valgorenhet', label: 'Välgörenhet' },
+  { to: '/#samarbetspartners', label: 'Samarbetspartners' },
+  { to: '/#recensioner', label: 'Recensioner' },
+];
+
 export function Footer() {
   const { config } = usePublicConfig();
   const s = config.settings;
@@ -25,7 +32,7 @@ export function Footer() {
         <nav aria-label="Sidfot" className="md:col-span-2">
           <p className="eyebrow">Navigation</p>
           <ul className="mt-5 space-y-3 text-sm">
-            {NAV_LINKS.map((l) => (
+            {[...NAV_LINKS, ...SECONDARY_LINKS].map((l) => (
               <li key={l.to}>
                 <Link to={l.to} className="text-silver-300 transition-colors hover:text-white">
                   {l.label}
